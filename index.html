@@ -3,15 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>习惯打卡 Pro v4</title>
+    <title>习惯打卡 Pro v5 (数据迁移版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Chosen Palette: Warm Neutrals with Pastel Accents -->
     <!-- Application Structure Plan:
-         1. Two main views (Tabs): Track & Add.
-         2. Unified deletion logic into a single modal.
-         3. Both "Clear Logs" and "Delete Habit" now require a 2-step confirmation via the modal.
-         4. Deleting a habit (L2) now correctly removes it from both the "Added List" and the "Checklist" view by filtering the main 'habits' array and re-rendering both lists.
+         1. Views: Track, Add, and Settings (New).
+         2. Feature: Data Import/Export to solve the "multi-device" issue manually.
+         3. Preserved: All v4 features (Double confirm delete, Pastel charts, Fireworks).
     -->
     <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
     <style>
@@ -50,40 +49,36 @@
             100% { transform: scale(2.5) translate(var(--tx), var(--ty)); opacity: 0; }
         }
 
-        /* 图表容器样式 */
+        /* 图表容器 */
         .chart-scroll-wrapper {
             width: 100%;
             overflow-x: auto;
             scrollbar-width: thin;
             scrollbar-color: #fb923c #fff7ed;
         }
-        .chart-scroll-wrapper::-webkit-scrollbar {
-            height: 8px;
-        }
-        .chart-scroll-wrapper::-webkit-scrollbar-track {
-            background: #fff7ed;
-        }
-        .chart-scroll-wrapper::-webkit-scrollbar-thumb {
-            background-color: #fb923c;
-            border-radius: 4px;
-        }
-
         .chart-body {
             position: relative;
             height: 350px;
         }
         
-        /* 删除按钮悬停效果 */
         .delete-habit-btn:hover {
-            background-color: #fecaca; /* red-200 */
-            color: #dc2626; /* red-600 */
+            background-color: #fecaca;
+            color: #dc2626;
+        }
+        
+        /* 文本域样式 */
+        textarea {
+            font-family: monospace;
         }
     </style>
 </head>
 <body class="bg-orange-50 text-orange-900 font-sans min-h-screen">
 
     <div class="max-w-4xl mx-auto p-4 sm:p-6 pb-20">
-        <h1 class="text-3xl font-bold text-center text-orange-800 mb-6 tracking-wide">习惯打卡 Pro</h1>
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl sm:text-3xl font-bold text-orange-800 tracking-wide">习惯打卡 Pro</h1>
+            <button id="nav-settings" class="text-sm text-orange-600 underline hover:text-orange-800">⚙️ 数据迁移</button>
+        </div>
 
         <!-- 导航 -->
         <div class="flex justify-center space-x-4 mb-6 border-b border-orange-200 pb-2">
@@ -180,6 +175,39 @@
             </div>
         </div>
 
+        <!-- 视图: 设置/数据迁移 (新功能) -->
+        <div id="view-settings" class="view">
+            <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-orange-100">
+                <h2 class="text-xl font-bold mb-4 text-orange-800">⚙️ 数据备份与迁移</h2>
+                <p class="text-sm text-gray-600 mb-4">
+                    由于本应用使用本地存储，更换设备（如从电脑换到手机）时数据不会自动同步。
+                    请使用下方的功能手动迁移数据。
+                </p>
+                
+                <div class="grid gap-6 md:grid-cols-2">
+                    <!-- 导出 -->
+                    <div class="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                        <h3 class="font-bold text-orange-800 mb-2">📤 导出数据 (旧设备)</h3>
+                        <p class="text-xs text-gray-500 mb-2">将当前的所有习惯和打卡记录生成一串代码。</p>
+                        <button id="btn-export" class="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition-colors font-medium mb-2">
+                            生成并复制数据代码
+                        </button>
+                        <span id="export-status" class="text-xs text-green-600 font-bold hidden">✅ 已复制到剪贴板！请发给新设备。</span>
+                    </div>
+
+                    <!-- 导入 -->
+                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                        <h3 class="font-bold text-blue-800 mb-2">📥 导入数据 (新设备)</h3>
+                        <p class="text-xs text-gray-500 mb-2">将复制的代码粘贴到下方，点击导入。</p>
+                        <textarea id="import-area" rows="3" class="w-full border border-gray-300 rounded-md p-2 text-xs mb-2 focus:ring-2 focus:ring-blue-400" placeholder="在此处粘贴数据代码..."></textarea>
+                        <button id="btn-import" class="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium">
+                            导入并覆盖当前数据
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <!-- 提示框 -->
@@ -215,14 +243,16 @@
             let habits = [];
             let log = [];
             let chartInstance = null;
-            // 统一的删除状态管理器
             let deleteActionState = { type: null, data: null, step: 0 }; 
 
             // --- DOM 元素 ---
             const navAdd = document.getElementById('nav-add');
             const navTrack = document.getElementById('nav-track');
+            const navSettings = document.getElementById('nav-settings'); // 新增
+            
             const viewAdd = document.getElementById('view-add');
             const viewTrack = document.getElementById('view-track');
+            const viewSettings = document.getElementById('view-settings'); // 新增
 
             const habitL1Input = document.getElementById('habit-l1');
             const habitL2Input = document.getElementById('habit-l2');
@@ -247,6 +277,12 @@
             const btnModalCancel = document.getElementById('btn-modal-cancel');
             const btnModalConfirm = document.getElementById('btn-modal-confirm');
 
+            // 导入导出元素
+            const btnExport = document.getElementById('btn-export');
+            const exportStatus = document.getElementById('export-status');
+            const btnImport = document.getElementById('btn-import');
+            const importArea = document.getElementById('import-area');
+
             // --- 初始化 ---
             loadData();
             renderAddHabitList();
@@ -256,8 +292,13 @@
             // --- 核心数据函数 ---
 
             function loadData() {
-                habits = JSON.parse(localStorage.getItem(HABITS_KEY)) || [];
-                log = JSON.parse(localStorage.getItem(LOG_KEY)) || [];
+                try {
+                    habits = JSON.parse(localStorage.getItem(HABITS_KEY)) || [];
+                    log = JSON.parse(localStorage.getItem(LOG_KEY)) || [];
+                } catch(e) {
+                    habits = [];
+                    log = [];
+                }
             }
 
             function saveHabits() {
@@ -271,17 +312,21 @@
             // --- 视图切换 ---
 
             function showView(viewId) {
-                [viewAdd, viewTrack].forEach(v => v.classList.remove('active'));
+                [viewAdd, viewTrack, viewSettings].forEach(v => v.classList.remove('active'));
                 
                 const inactiveClass = 'nav-btn px-6 py-2 rounded-t-lg font-medium transition-all duration-200 text-gray-500 hover:text-orange-600 hover:bg-orange-50';
                 const activeClass = 'nav-btn px-6 py-2 rounded-t-lg font-medium transition-all duration-200 bg-white text-orange-700 border-t border-x border-orange-200 shadow-sm';
                 
                 navAdd.className = inactiveClass;
                 navTrack.className = inactiveClass;
+                navSettings.classList.remove('text-orange-800', 'font-bold'); // Reset settings link style
 
                 if (viewId === 'view-add') {
                     viewAdd.classList.add('active');
                     navAdd.className = activeClass;
+                } else if (viewId === 'view-settings') {
+                    viewSettings.classList.add('active');
+                    navSettings.classList.add('text-orange-800', 'font-bold');
                 } else {
                     viewTrack.classList.add('active');
                     navTrack.className = activeClass;
@@ -290,8 +335,7 @@
                 }
             }
 
-            // --- 习惯管理 (添加与删除) ---
-
+            // --- 习惯管理 ---
             function addHabit() {
                 const l1 = habitL1Input.value.trim();
                 const l2 = habitL2Input.value.trim();
@@ -312,7 +356,6 @@
                 }
             }
             
-            // 渲染“已添加列表”（包含删除按钮）
             function renderAddHabitList() {
                 currentHabitsList.innerHTML = '';
                 if (habits.length === 0) {
@@ -345,7 +388,6 @@
                         delBtn.title = '删除此习惯';
                         delBtn.className = 'delete-habit-btn w-5 h-5 flex items-center justify-center rounded-full bg-orange-200 text-orange-700 text-lg leading-none transition-colors';
                         
-                        // *** 重点：点击删除按钮，调用“发起删除习惯”模态框 ***
                         delBtn.onclick = (e) => {
                             e.stopPropagation();
                             initiateDeleteHabit(habit.l1, habit.l2);
@@ -372,8 +414,6 @@
             }
 
             // --- 打卡 & 统计 渲染 ---
-
-            // 渲染“今日习惯”（打卡列表）
             function renderHabitChecklist() {
                 habitChecklistContainer.innerHTML = '';
                 if (habits.length === 0) {
@@ -511,7 +551,6 @@
             }
 
             // --- 统计渲染 ---
-
             function renderDailyLog() {
                 dailyLogList.innerHTML = '';
                 const todayStr = getFormattedDate(Date.now());
@@ -730,9 +769,58 @@
             
             zoomSlider.addEventListener('input', () => renderDailyChart());
 
-            // --- 统一的删除确认逻辑 (核心修改) ---
+            // --- 导入导出逻辑 (新) ---
             
-            // 1. 发起“清空所有日志”
+            // 导出
+            btnExport.addEventListener('click', () => {
+                const data = {
+                    habits: habits,
+                    log: log,
+                    version: 'v5'
+                };
+                const dataStr = JSON.stringify(data);
+                
+                // 复制到剪贴板
+                navigator.clipboard.writeText(dataStr).then(() => {
+                    exportStatus.classList.remove('hidden');
+                    setTimeout(() => exportStatus.classList.add('hidden'), 3000);
+                }).catch(err => {
+                    alert('复制失败，请手动复制控制台中的数据');
+                    console.log('数据代码:', dataStr);
+                });
+            });
+            
+            // 导入
+            btnImport.addEventListener('click', () => {
+                const rawStr = importArea.value.trim();
+                if (!rawStr) {
+                    showToast('请输入数据代码', 'bg-red-500');
+                    return;
+                }
+                
+                try {
+                    const data = JSON.parse(rawStr);
+                    // 简单的校验
+                    if (data.habits && Array.isArray(data.log)) {
+                        if (confirm('⚠️ 导入将覆盖当前设备上的所有记录，确定吗？')) {
+                            habits = data.habits;
+                            log = data.log;
+                            saveHabits();
+                            saveLog();
+                            showToast('数据导入成功！', 'bg-green-500');
+                            importArea.value = '';
+                            showView('view-track'); // 回到主页
+                        }
+                    } else {
+                        showToast('数据格式错误', 'bg-red-500');
+                    }
+                } catch(e) {
+                    showToast('无效的数据代码', 'bg-red-500');
+                }
+            });
+
+            // --- 统一的删除确认逻辑 ---
+            
             function initiateClearLogs() {
                 deleteActionState = { type: 'LOGS', step: 1, data: null };
                 modalTitle.textContent = '⚠️ 确认清空日志';
@@ -742,7 +830,6 @@
                 confirmModal.classList.remove('hidden');
             }
             
-            // 2. 发起“删除单个习惯”
             function initiateDeleteHabit(l1, l2) {
                 deleteActionState = { type: 'HABIT', step: 1, data: { l1, l2 } };
                 modalTitle.textContent = '⚠️ 确认删除习惯';
@@ -752,29 +839,23 @@
                 confirmModal.classList.remove('hidden');
             }
 
-            // 3. 取消模态框
             function cancelModal() {
                 deleteActionState = { type: null, data: null, step: 0 };
                 confirmModal.classList.add('hidden');
-                // 恢复按钮的非警告状态
                 btnModalConfirm.classList.remove('animate-pulse', 'bg-red-700', 'hover:bg-red-800');
                 btnModalConfirm.classList.add('bg-red-500', 'hover:bg-red-600');
             }
             
-            // 4. 确认模态框操作 (统一处理)
             function confirmModalAction() {
                 const { type, step, data } = deleteActionState;
 
                 if (type === 'LOGS') {
-                    // --- 处理清空日志 ---
                     if (step === 1) {
-                        // 进入第2步确认
                         deleteActionState.step = 2;
                         modalText.innerHTML = '<span class="text-red-600 font-bold">最后警告！</span><br>所有历史数据都将永久消失。';
                         btnModalConfirm.textContent = '是的，全部删除';
                         btnModalConfirm.className = 'px-5 py-2 bg-red-700 text-white rounded-xl font-bold hover:bg-red-800 shadow-lg transition-colors animate-pulse';
                     } else if (step === 2) {
-                        // 执行清空
                         log = [];
                         saveLog();
                         renderAllStats();
@@ -782,19 +863,16 @@
                         showToast('数据已清空', 'bg-gray-600');
                     }
                 } else if (type === 'HABIT') {
-                    // --- 处理删除习惯 ---
                     if (step === 1) {
-                        // 进入第2步确认
                         deleteActionState.step = 2;
                         modalText.innerHTML = `<span class="text-red-600 font-bold">真的要删除 “${data.l2}” 吗？</span><br>此操作不可撤销。`;
                         btnModalConfirm.textContent = '永久删除此习惯';
                         btnModalConfirm.className = 'px-5 py-2 bg-red-700 text-white rounded-xl font-bold hover:bg-red-800 shadow-lg transition-colors animate-pulse';
                     } else if (step === 2) {
-                        // 执行删除
                         habits = habits.filter(h => !(h.l1 === data.l1 && h.l2 === data.l2));
                         saveHabits();
-                        renderAddHabitList();   // 重新渲染“已添加列表”
-                        renderHabitChecklist(); // 重新渲染“今日习惯”列表
+                        renderAddHabitList();
+                        renderHabitChecklist();
                         cancelModal();
                         showToast('习惯已删除', 'bg-gray-600');
                     }
@@ -804,6 +882,8 @@
             // --- 事件监听 ---
             navAdd.addEventListener('click', () => showView('view-add'));
             navTrack.addEventListener('click', () => showView('view-track'));
+            navSettings.addEventListener('click', () => showView('view-settings'));
+            
             btnAddHabit.addEventListener('click', addHabit);
             
             btnInitiateClearLogs.addEventListener('click', initiateClearLogs);
