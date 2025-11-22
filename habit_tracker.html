@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>习惯打卡 Pro v4</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Warm Neutrals with Pastel Accents -->
+    <!-- Application Structure Plan:
+         1. Two main views (Tabs): Track & Add.
+         2. Unified deletion logic into a single modal.
+         3. Both "Clear Logs" and "Delete Habit" now require a 2-step confirmation via the modal.
+         4. Deleting a habit (L2) now correctly removes it from both the "Added List" and the "Checklist" view by filtering the main 'habits' array and re-rendering both lists.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        .hidden { display: none; }
+        .view { display: none; }
+        .view.active { display: block; }
+        
+        /* 烟花容器 */
+        .fireworks {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.1);
+            z-index: 100;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.1s ease-out;
+        }
+        .fireworks.active {
+            opacity: 1;
+            transition: opacity 0.05s ease-in;
+        }
+        .firework {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background-color: #fff;
+            border-radius: 50%;
+            opacity: 0;
+            animation: burst 0.3s ease-out forwards;
+        }
+        @keyframes burst {
+            0% { transform: scale(0); opacity: 1; }
+            100% { transform: scale(2.5) translate(var(--tx), var(--ty)); opacity: 0; }
+        }
+
+        /* 图表容器样式 */
+        .chart-scroll-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #fb923c #fff7ed;
+        }
+        .chart-scroll-wrapper::-webkit-scrollbar {
+            height: 8px;
+        }
+        .chart-scroll-wrapper::-webkit-scrollbar-track {
+            background: #fff7ed;
+        }
+        .chart-scroll-wrapper::-webkit-scrollbar-thumb {
+            background-color: #fb923c;
+            border-radius: 4px;
+        }
+
+        .chart-body {
+            position: relative;
+            height: 350px;
+        }
+        
+        /* 删除按钮悬停效果 */
+        .delete-habit-btn:hover {
+            background-color: #fecaca; /* red-200 */
+            color: #dc2626; /* red-600 */
+        }
+    </style>
+</head>
+<body class="bg-orange-50 text-orange-900 font-sans min-h-screen">
+
+    <div class="max-w-4xl mx-auto p-4 sm:p-6 pb-20">
+        <h1 class="text-3xl font-bold text-center text-orange-800 mb-6 tracking-wide">习惯打卡 Pro</h1>
+
+        <!-- 导航 -->
+        <div class="flex justify-center space-x-4 mb-6 border-b border-orange-200 pb-2">
+            <button id="nav-track" class="nav-btn px-6 py-2 rounded-t-lg font-medium transition-all duration-200">打卡 & 统计</button>
+            <button id="nav-add" class="nav-btn px-6 py-2 rounded-t-lg font-medium transition-all duration-200">添加习惯</button>
+        </div>
+
+        <!-- 视图: 打卡与统计 -->
+        <div id="view-track" class="view active space-y-8">
+            
+            <!-- 1. 今日习惯打卡 -->
+            <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-orange-100">
+                <h2 class="text-xl font-bold mb-4 text-orange-800 flex items-center">
+                    <span class="mr-2">📝</span> 今日习惯
+                </h2>
+                <div id="habit-checklist-container" class="space-y-4">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <!-- 2. 打卡日志 -->
+            <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-orange-100 relative">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-orange-800 flex items-center">
+                        <span class="mr-2">📅</span> 打卡日志 (今日)
+                    </h2>
+                    <button id="btn-initiate-clear-logs" class="bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-200 transition-colors">
+                        清空数据
+                    </button>
+                </div>
+                <div id="daily-log-list" class="space-y-2 max-h-60 overflow-y-auto">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <!-- 3. 月度统计 -->
+            <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-orange-100">
+                <h2 class="text-xl font-bold mb-4 text-orange-800 flex items-center">
+                    <span class="mr-2">🏆</span> 月度排行 (本月)
+                </h2>
+                <div id="monthly-stats-list" class="space-y-2">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <!-- 4. 每日统计图表 -->
+            <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-orange-100">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
+                    <h2 class="text-xl font-bold text-orange-800 flex items-center">
+                        <span class="mr-2">📊</span> 每日统计
+                    </h2>
+                    
+                    <!-- 缩放控制条 -->
+                    <div class="flex items-center space-x-2 mt-2 sm:mt-0 bg-orange-50 px-3 py-1 rounded-full">
+                        <span class="text-xs text-orange-600">视角:</span>
+                        <span class="text-xs">➖</span>
+                        <input type="range" id="zoom-slider" min="30" max="150" value="60" class="w-24 h-2 bg-orange-200 rounded-lg appearance-none cursor-pointer accent-orange-500">
+                        <span class="text-xs">➕</span>
+                    </div>
+                </div>
+
+                <!-- 滚动容器 -->
+                <div class="chart-scroll-wrapper border-t border-orange-50 pt-4">
+                    <div class="chart-body" id="chart-body">
+                        <canvas id="daily-bar-chart"></canvas>
+                    </div>
+                </div>
+                <p class="text-center text-xs text-gray-400 mt-2">← 左右滑动查看更多日期 →</p>
+            </div>
+        </div>
+
+        <!-- 视图: 添加习惯 -->
+        <div id="view-add" class="view">
+            <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-orange-100">
+                <h2 class="text-xl font-bold mb-4 text-orange-800">➕ 添加新习惯</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="habit-l1" class="block text-sm font-medium text-orange-700 mb-1">一级分类 (例如: 生活、工作)</label>
+                        <input type="text" id="habit-l1" placeholder="输入分类名称..." class="block w-full px-4 py-2 bg-orange-50 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent transition-all">
+                    </div>
+                    <div>
+                        <label for="habit-l2" class="block text-sm font-medium text-orange-700 mb-1">具体习惯 (例如: 晨跑3公里)</label>
+                        <input type="text" id="habit-l2" placeholder="输入习惯内容..." class="block w-full px-4 py-2 bg-orange-50 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent transition-all">
+                    </div>
+                    <button id="btn-add-habit" class="w-full bg-orange-500 hover:bg-orange-600 text-white px-4 py-3 rounded-lg font-bold shadow-md hover:shadow-lg transition-all transform active:scale-95">
+                        确认添加
+                    </button>
+                </div>
+            </div>
+            <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-orange-100 mt-6">
+                <h2 class="text-xl font-bold mb-4 text-orange-800">📋 已添加列表</h2>
+                <p class="text-xs text-gray-500 mb-4">提示：点击习惯旁边的 × 可删除该习惯（需2次确认）。</p>
+                <div id="current-habits-list" class="space-y-3"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 提示框 -->
+    <div id="toast-message" class="hidden fixed top-8 left-1/2 -translate-x-1/2 bg-gradient-to-r from-orange-500 to-red-500 text-white px-8 py-3 rounded-full shadow-2xl z-50 text-center font-bold tracking-wide transform transition-all duration-300 scale-95 opacity-0">
+    </div>
+
+    <!-- 烟花遮罩 -->
+    <div id="fireworks-overlay" class="fireworks"></div>
+
+    <!-- 确认模态框 (统一使用) -->
+    <div id="confirm-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full transform transition-all scale-100">
+            <h3 class="text-xl font-bold text-gray-800" id="modal-title">⚠️ 确认操作</h3>
+            <p class="mt-3 text-sm text-gray-600 leading-relaxed" id="modal-text">您确定要执行此操作吗？</p>
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="btn-modal-cancel" class="px-5 py-2 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors">取消</button>
+                <button id="btn-modal-confirm" class="px-5 py-2 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 shadow-md transition-colors">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- 常量与状态 ---
+            const HABITS_KEY = 'habitTracker_habits_v2';
+            const LOG_KEY = 'habitTracker_log_v2';
+            
+            const PASTEL_COLORS = [
+                '#FFB3BA', '#FFDFBA', '#FFFFBA', '#BAFFC9', 
+                '#BAE1FF', '#E6B3FF', '#F0E68C'
+            ];
+
+            let habits = [];
+            let log = [];
+            let chartInstance = null;
+            // 统一的删除状态管理器
+            let deleteActionState = { type: null, data: null, step: 0 }; 
+
+            // --- DOM 元素 ---
+            const navAdd = document.getElementById('nav-add');
+            const navTrack = document.getElementById('nav-track');
+            const viewAdd = document.getElementById('view-add');
+            const viewTrack = document.getElementById('view-track');
+
+            const habitL1Input = document.getElementById('habit-l1');
+            const habitL2Input = document.getElementById('habit-l2');
+            const btnAddHabit = document.getElementById('btn-add-habit');
+            const currentHabitsList = document.getElementById('current-habits-list');
+            
+            const habitChecklistContainer = document.getElementById('habit-checklist-container');
+            const dailyLogList = document.getElementById('daily-log-list');
+            const monthlyStatsList = document.getElementById('monthly-stats-list');
+            
+            const chartCanvas = document.getElementById('daily-bar-chart');
+            const chartBody = document.getElementById('chart-body');
+            const zoomSlider = document.getElementById('zoom-slider');
+
+            const toastMessage = document.getElementById('toast-message');
+            const fireworksOverlay = document.getElementById('fireworks-overlay');
+            
+            const btnInitiateClearLogs = document.getElementById('btn-initiate-clear-logs');
+            const confirmModal = document.getElementById('confirm-modal');
+            const modalTitle = document.getElementById('modal-title');
+            const modalText = document.getElementById('modal-text');
+            const btnModalCancel = document.getElementById('btn-modal-cancel');
+            const btnModalConfirm = document.getElementById('btn-modal-confirm');
+
+            // --- 初始化 ---
+            loadData();
+            renderAddHabitList();
+            renderHabitChecklist();
+            showView('view-track');
+
+            // --- 核心数据函数 ---
+
+            function loadData() {
+                habits = JSON.parse(localStorage.getItem(HABITS_KEY)) || [];
+                log = JSON.parse(localStorage.getItem(LOG_KEY)) || [];
+            }
+
+            function saveHabits() {
+                localStorage.setItem(HABITS_KEY, JSON.stringify(habits));
+            }
+
+            function saveLog() {
+                localStorage.setItem(LOG_KEY, JSON.stringify(log));
+            }
+
+            // --- 视图切换 ---
+
+            function showView(viewId) {
+                [viewAdd, viewTrack].forEach(v => v.classList.remove('active'));
+                
+                const inactiveClass = 'nav-btn px-6 py-2 rounded-t-lg font-medium transition-all duration-200 text-gray-500 hover:text-orange-600 hover:bg-orange-50';
+                const activeClass = 'nav-btn px-6 py-2 rounded-t-lg font-medium transition-all duration-200 bg-white text-orange-700 border-t border-x border-orange-200 shadow-sm';
+                
+                navAdd.className = inactiveClass;
+                navTrack.className = inactiveClass;
+
+                if (viewId === 'view-add') {
+                    viewAdd.classList.add('active');
+                    navAdd.className = activeClass;
+                } else {
+                    viewTrack.classList.add('active');
+                    navTrack.className = activeClass;
+                    renderAllStats();
+                    setTimeout(() => renderDailyChart(), 50); 
+                }
+            }
+
+            // --- 习惯管理 (添加与删除) ---
+
+            function addHabit() {
+                const l1 = habitL1Input.value.trim();
+                const l2 = habitL2Input.value.trim();
+                if (l1 && l2) {
+                    if (!habits.some(h => h.l1 === l1 && h.l2 === l2)) {
+                        habits.push({ l1, l2 });
+                        saveHabits();
+                        habitL1Input.value = '';
+                        habitL2Input.value = '';
+                        renderAddHabitList();
+                        renderHabitChecklist();
+                        showToast('添加成功！', 'bg-green-500');
+                    } else {
+                        showToast('这个习惯已经存在了', 'bg-yellow-500');
+                    }
+                } else {
+                    showToast('请完整填写分类和内容', 'bg-red-500');
+                }
+            }
+            
+            // 渲染“已添加列表”（包含删除按钮）
+            function renderAddHabitList() {
+                currentHabitsList.innerHTML = '';
+                if (habits.length === 0) {
+                    currentHabitsList.innerHTML = '<p class="text-gray-400 text-sm italic p-2">暂无习惯，请在上方添加。</p>';
+                    return;
+                }
+                const grouped = groupHabits(habits);
+                for (const l1 in grouped) {
+                    const l1El = document.createElement('div');
+                    l1El.className = 'mb-3 pb-3 border-b border-orange-50 last:border-0';
+                    
+                    const l1Header = document.createElement('h4');
+                    l1Header.className = 'font-bold text-orange-700 text-sm mb-2';
+                    l1Header.textContent = l1;
+                    l1El.appendChild(l1Header);
+                    
+                    const l2List = document.createElement('div');
+                    l2List.className = 'flex flex-wrap gap-2';
+                    
+                    grouped[l1].forEach(habit => {
+                        const l2Container = document.createElement('div');
+                        l2Container.className = 'flex items-center bg-orange-100 text-orange-900 text-sm px-3 py-1.5 rounded-lg border border-orange-200 shadow-sm';
+                        
+                        const l2Text = document.createElement('span');
+                        l2Text.textContent = habit.l2;
+                        l2Text.className = 'mr-2 font-medium';
+                        
+                        const delBtn = document.createElement('button');
+                        delBtn.innerHTML = '&times;';
+                        delBtn.title = '删除此习惯';
+                        delBtn.className = 'delete-habit-btn w-5 h-5 flex items-center justify-center rounded-full bg-orange-200 text-orange-700 text-lg leading-none transition-colors';
+                        
+                        // *** 重点：点击删除按钮，调用“发起删除习惯”模态框 ***
+                        delBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            initiateDeleteHabit(habit.l1, habit.l2);
+                        };
+                        
+                        l2Container.appendChild(l2Text);
+                        l2Container.appendChild(delBtn);
+                        l2List.appendChild(l2Container);
+                    });
+                    
+                    l1El.appendChild(l2List);
+                    currentHabitsList.appendChild(l1El);
+                }
+            }
+
+            function groupHabits(habitsArray) {
+                return habitsArray.reduce((acc, habit) => {
+                    if (!acc[habit.l1]) {
+                        acc[habit.l1] = [];
+                    }
+                    acc[habit.l1].push(habit);
+                    return acc;
+                }, {});
+            }
+
+            // --- 打卡 & 统计 渲染 ---
+
+            // 渲染“今日习惯”（打卡列表）
+            function renderHabitChecklist() {
+                habitChecklistContainer.innerHTML = '';
+                if (habits.length === 0) {
+                    habitChecklistContainer.innerHTML = '<div class="text-center py-8 text-gray-400">👋 还没有习惯，去"添加习惯"页面新建一个吧！</div>';
+                    return;
+                }
+                const grouped = groupHabits(habits);
+                
+                for (const l1 in grouped) {
+                    const l1Group = document.createElement('div');
+                    l1Group.className = 'border border-orange-100 rounded-lg overflow-hidden mb-3';
+                    
+                    const l1Header = document.createElement('div');
+                    l1Header.className = 'flex justify-between items-center p-3 bg-orange-50 cursor-pointer hover:bg-orange-100 transition-colors select-none';
+                    l1Header.innerHTML = `
+                        <h3 class="font-bold text-orange-800">${l1}</h3>
+                        <span class="text-orange-400 text-xs transform transition-transform duration-200">▼</span>
+                    `;
+                    
+                    const l2Container = document.createElement('div');
+                    l2Container.className = 'p-3 bg-white space-y-3';
+                    
+                    grouped[l1].forEach(habit => {
+                        const habitEl = document.createElement('div');
+                        habitEl.className = 'flex items-center space-x-3 group cursor-pointer p-2 rounded-lg hover:bg-orange-50 transition-all';
+                        
+                        const checkbox = document.createElement('div');
+                        checkbox.className = 'w-6 h-6 border-2 border-orange-300 rounded-md flex items-center justify-center text-white bg-white group-hover:border-orange-400 transition-all shadow-sm';
+                        
+                        habitEl.onclick = (e) => {
+                            if(habitEl.dataset.clicking) return;
+                            habitEl.dataset.clicking = "true";
+                            
+                            checkbox.classList.add('bg-orange-500', 'border-orange-500');
+                            checkbox.innerHTML = '✓';
+                            
+                            checkIn(habit.l2);
+                            
+                            setTimeout(() => {
+                                checkbox.classList.remove('bg-orange-500', 'border-orange-500');
+                                checkbox.innerHTML = '';
+                                delete habitEl.dataset.clicking;
+                            }, 300);
+                        };
+                        
+                        const name = document.createElement('span');
+                        name.className = 'text-gray-700 font-medium select-none';
+                        name.textContent = habit.l2;
+                        
+                        habitEl.appendChild(checkbox);
+                        habitEl.appendChild(name);
+                        l2Container.appendChild(habitEl);
+                    });
+                    
+                    l1Header.onclick = () => {
+                        if (l2Container.style.display === 'none') {
+                            l2Container.style.display = 'block';
+                            l1Header.querySelector('span').classList.remove('-rotate-90');
+                        } else {
+                            l2Container.style.display = 'none';
+                            l1Header.querySelector('span').classList.add('-rotate-90');
+                        }
+                    };
+                    
+                    l1Group.appendChild(l1Header);
+                    l1Group.appendChild(l2Container);
+                    habitChecklistContainer.appendChild(l1Group);
+                }
+            }
+
+            function checkIn(habitName) {
+                log.push({ habit: habitName, time: Date.now() });
+                saveLog();
+                showFeedback(habitName);
+                renderAllStats();
+            }
+
+            function showFeedback(habitName) {
+                toastMessage.textContent = `恭喜你已完成“${habitName}”习惯的打卡`;
+                toastMessage.classList.remove('hidden', 'scale-95', 'opacity-0');
+                toastMessage.classList.add('scale-100', 'opacity-100');
+                
+                fireworksOverlay.classList.add('active');
+                createFireworks(30);
+
+                setTimeout(() => {
+                    fireworksOverlay.classList.remove('active');
+                    fireworksOverlay.innerHTML = '';
+                }, 300);
+
+                setTimeout(() => {
+                    toastMessage.classList.remove('scale-100', 'opacity-100');
+                    toastMessage.classList.add('scale-95', 'opacity-0');
+                    setTimeout(() => toastMessage.classList.add('hidden'), 300);
+                }, 1300);
+            }
+            
+            function showToast(msg, bgClass) {
+                const el = document.createElement('div');
+                el.className = `fixed top-20 left-1/2 -translate-x-1/2 ${bgClass || 'bg-gray-700'} text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm transition-opacity duration-500 opacity-0`;
+                el.textContent = msg;
+                document.body.appendChild(el);
+                requestAnimationFrame(() => el.classList.remove('opacity-0'));
+                setTimeout(() => {
+                    el.classList.add('opacity-0');
+                    setTimeout(() => el.remove(), 500);
+                }, 2000);
+            }
+
+            function createFireworks(count) {
+                for (let i = 0; i < count; i++) {
+                    const firework = document.createElement('div');
+                    firework.className = 'firework';
+                    const top = 20 + Math.random() * 60;
+                    const left = 20 + Math.random() * 60;
+                    firework.style.top = `${top}vh`;
+                    firework.style.left = `${left}vw`;
+                    
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 100 + Math.random() * 150;
+                    const tx = `${Math.cos(angle) * distance}px`;
+                    const ty = `${Math.sin(angle) * distance}px`;
+                    
+                    firework.style.setProperty('--tx', tx);
+                    firework.style.setProperty('--ty', ty);
+                    firework.style.backgroundColor = `hsl(${Math.random() * 360}, 80%, 60%)`;
+                    
+                    fireworksOverlay.appendChild(firework);
+                }
+            }
+            
+            function getFormattedDate(timestamp) {
+                const d = new Date(timestamp);
+                return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+            }
+
+            // --- 统计渲染 ---
+
+            function renderDailyLog() {
+                dailyLogList.innerHTML = '';
+                const todayStr = getFormattedDate(Date.now());
+                const todayLog = log.filter(entry => getFormattedDate(entry.time) === todayStr);
+
+                if (todayLog.length === 0) {
+                    dailyLogList.innerHTML = '<div class="text-gray-400 text-sm italic text-center py-4">今天还没有打卡哦，加油！</div>';
+                    return;
+                }
+
+                const grouped = todayLog.reduce((acc, entry) => {
+                    if (!acc[entry.habit]) acc[entry.habit] = [];
+                    acc[entry.habit].push(entry.time);
+                    return acc;
+                }, {});
+
+                for (const habitName in grouped) {
+                    const times = grouped[habitName];
+                    const count = times.length;
+                    
+                    const logEl = document.createElement('div');
+                    logEl.className = 'bg-orange-50 rounded-lg p-2';
+                    
+                    const headerEl = document.createElement('div');
+                    headerEl.className = 'flex items-center justify-between';
+                    
+                    const leftDiv = document.createElement('div');
+                    leftDiv.className = 'flex items-center space-x-2';
+                    
+                    const nameEl = document.createElement('span');
+                    nameEl.className = 'font-semibold text-orange-900';
+                    nameEl.textContent = habitName;
+                    leftDiv.appendChild(nameEl);
+                    
+                    if (count > 0) {
+                        const countEl = document.createElement('span');
+                        countEl.className = 'text-xs font-bold bg-white text-orange-600 border border-orange-200 px-2 py-0.5 rounded-full';
+                        countEl.textContent = `${count}次`;
+                        leftDiv.appendChild(countEl);
+                    }
+                    
+                    if (count > 1) {
+                        headerEl.classList.add('cursor-pointer');
+                        const hint = document.createElement('span');
+                        hint.className = 'text-xs text-orange-400';
+                        hint.textContent = '展开详情 ▾';
+                        headerEl.appendChild(leftDiv);
+                        headerEl.appendChild(hint);
+                    } else {
+                        headerEl.appendChild(leftDiv);
+                        const timeSpan = document.createElement('span');
+                        timeSpan.className = 'text-xs text-orange-500';
+                        timeSpan.textContent = new Date(times[0]).toLocaleTimeString('zh-CN', {hour: '2-digit', minute:'2-digit'});
+                        headerEl.appendChild(timeSpan);
+                    }
+                    
+                    logEl.appendChild(headerEl);
+
+                    if (count > 1) {
+                        const timesList = document.createElement('ul');
+                        timesList.className = 'hidden mt-2 space-y-1 pl-2 border-l-2 border-orange-200';
+                        times.forEach(time => {
+                            const timeItem = document.createElement('li');
+                            timeItem.className = 'text-xs text-gray-600';
+                            timeItem.textContent = new Date(time).toLocaleTimeString('zh-CN');
+                            timesList.appendChild(timeItem);
+                        });
+                        
+                        headerEl.onclick = () => {
+                            timesList.classList.toggle('hidden');
+                        };
+                        logEl.appendChild(timesList);
+                    }
+                    
+                    dailyLogList.appendChild(logEl);
+                }
+            }
+
+            function renderMonthlyStats() {
+                monthlyStatsList.innerHTML = '';
+                const now = new Date();
+                const currentMonth = now.getMonth();
+                const currentYear = now.getFullYear();
+                
+                const monthLog = log.filter(entry => {
+                    const d = new Date(entry.time);
+                    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+                });
+
+                if (monthLog.length === 0) {
+                    monthlyStatsList.innerHTML = '<div class="text-gray-400 text-sm italic text-center py-4">本月暂无数据。</div>';
+                    return;
+                }
+
+                const grouped = monthLog.reduce((acc, entry) => {
+                    acc[entry.habit] = (acc[entry.habit] || 0) + 1;
+                    return acc;
+                }, {});
+                
+                const sorted = Object.entries(grouped).sort(([, countA], [, countB]) => countB - countA);
+
+                sorted.forEach(([habitName, count], index) => {
+                    if (count < 1) return;
+
+                    const statEl = document.createElement('div');
+                    statEl.className = 'flex items-center p-2 hover:bg-orange-50 rounded-lg transition-colors';
+                    
+                    let badgeClass = 'bg-gray-100 text-gray-600';
+                    if (index === 0) badgeClass = 'bg-yellow-100 text-yellow-700 font-bold';
+                    if (index === 1) badgeClass = 'bg-gray-200 text-gray-700 font-bold';
+                    if (index === 2) badgeClass = 'bg-orange-100 text-orange-700 font-bold';
+
+                    statEl.innerHTML = `
+                        <div class="flex items-center flex-1">
+                            <span class="w-6 h-6 flex items-center justify-center rounded-full text-xs mr-3 ${badgeClass}">${index + 1}</span>
+                            <span class="text-gray-800 font-medium">${habitName}</span>
+                        </div>
+                        <div class="w-full bg-gray-100 rounded-full h-2.5 max-w-[100px] mr-3 hidden sm:block">
+                            <div class="bg-orange-400 h-2.5 rounded-full" style="width: ${Math.min(100, (count / sorted[0][1]) * 100)}%"></div>
+                        </div>
+                        <span class="font-bold text-orange-600 text-sm">${count} 次</span>
+                    `;
+                    monthlyStatsList.appendChild(statEl);
+                });
+            }
+
+            function renderDailyChart() {
+                if (!chartCanvas) return;
+
+                const groupedByDay = log.reduce((acc, entry) => {
+                    const dateStr = getFormattedDate(entry.time);
+                    acc[dateStr] = (acc[dateStr] || 0) + 1;
+                    return acc;
+                }, {});
+
+                const sortedEntries = Object.entries(groupedByDay).sort((a, b) => {
+                    const partsA = a[0].split('.').map(Number);
+                    const partsB = b[0].split('.').map(Number);
+                    return new Date(partsA[0], partsA[1]-1, partsA[2]) - new Date(partsB[0], partsB[1]-1, partsB[2]);
+                });
+                
+                const labels = sortedEntries.map(entry => entry[0]);
+                const data = sortedEntries.map(entry => entry[1]);
+
+                const zoomLevel = parseInt(zoomSlider.value);
+                const barWidth = zoomLevel;
+                const gapWidth = barWidth / 2;
+                const unitWidth = barWidth + gapWidth;
+                
+                const minWidth = chartBody.parentElement.clientWidth;
+                const calculatedWidth = Math.max(minWidth, labels.length * unitWidth + 50);
+                
+                chartBody.style.width = `${calculatedWidth}px`;
+
+                if (chartInstance) {
+                    chartInstance.destroy();
+                }
+
+                if (labels.length === 0) {
+                    const ctx = chartCanvas.getContext('2d');
+                    ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+                    ctx.font = "14px Arial";
+                    ctx.fillStyle = "#9ca3af";
+                    ctx.textAlign = "center";
+                    ctx.fillText("暂无打卡数据", chartCanvas.width/2, chartCanvas.height/2);
+                    return;
+                }
+
+                chartInstance = new Chart(chartCanvas.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '打卡总数',
+                            data: data,
+                            backgroundColor: data.map((_, i) => PASTEL_COLORS[i % 7]),
+                            borderRadius: 4,
+                            borderSkipped: false,
+                            barThickness: barWidth,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        layout: { padding: { left: 10, right: 10, top: 20, bottom: 0 } },
+                        scales: {
+                            x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#7c2d12' } },
+                            y: { beginAtZero: true, border: { display: false }, grid: { color: '#fff7ed' }, ticks: { stepSize: 1, color: '#9a3412' } }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                titleColor: '#ea580c',
+                                bodyColor: '#4b5563',
+                                borderColor: '#fdba74',
+                                borderWidth: 1,
+                                padding: 10,
+                                displayColors: false,
+                                callbacks: { label: (context) => `✨ 完成 ${context.raw} 次` }
+                            }
+                        }
+                    }
+                });
+                
+                if (calculatedWidth > minWidth) {
+                    chartBody.parentElement.scrollLeft = chartBody.parentElement.scrollWidth;
+                }
+            }
+
+            function renderAllStats() {
+                renderDailyLog();
+                renderMonthlyStats();
+                renderDailyChart();
+            }
+            
+            zoomSlider.addEventListener('input', () => renderDailyChart());
+
+            // --- 统一的删除确认逻辑 (核心修改) ---
+            
+            // 1. 发起“清空所有日志”
+            function initiateClearLogs() {
+                deleteActionState = { type: 'LOGS', step: 1, data: null };
+                modalTitle.textContent = '⚠️ 确认清空日志';
+                modalText.innerHTML = '您确定要清空所有打卡日志吗？<br><span class="text-xs text-red-500">此操作无法撤销。</span>';
+                btnModalConfirm.textContent = '确定清空';
+                btnModalConfirm.className = 'px-5 py-2 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 shadow-md transition-colors';
+                confirmModal.classList.remove('hidden');
+            }
+            
+            // 2. 发起“删除单个习惯”
+            function initiateDeleteHabit(l1, l2) {
+                deleteActionState = { type: 'HABIT', step: 1, data: { l1, l2 } };
+                modalTitle.textContent = '⚠️ 确认删除习惯';
+                modalText.innerHTML = `您确定要删除习惯 “<strong class="text-red-600">${l2}</strong>” 吗？<br><span class="text-xs text-gray-500">（历史打卡记录将保留）</span>`;
+                btnModalConfirm.textContent = '确定删除';
+                btnModalConfirm.className = 'px-5 py-2 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 shadow-md transition-colors';
+                confirmModal.classList.remove('hidden');
+            }
+
+            // 3. 取消模态框
+            function cancelModal() {
+                deleteActionState = { type: null, data: null, step: 0 };
+                confirmModal.classList.add('hidden');
+                // 恢复按钮的非警告状态
+                btnModalConfirm.classList.remove('animate-pulse', 'bg-red-700', 'hover:bg-red-800');
+                btnModalConfirm.classList.add('bg-red-500', 'hover:bg-red-600');
+            }
+            
+            // 4. 确认模态框操作 (统一处理)
+            function confirmModalAction() {
+                const { type, step, data } = deleteActionState;
+
+                if (type === 'LOGS') {
+                    // --- 处理清空日志 ---
+                    if (step === 1) {
+                        // 进入第2步确认
+                        deleteActionState.step = 2;
+                        modalText.innerHTML = '<span class="text-red-600 font-bold">最后警告！</span><br>所有历史数据都将永久消失。';
+                        btnModalConfirm.textContent = '是的，全部删除';
+                        btnModalConfirm.className = 'px-5 py-2 bg-red-700 text-white rounded-xl font-bold hover:bg-red-800 shadow-lg transition-colors animate-pulse';
+                    } else if (step === 2) {
+                        // 执行清空
+                        log = [];
+                        saveLog();
+                        renderAllStats();
+                        cancelModal();
+                        showToast('数据已清空', 'bg-gray-600');
+                    }
+                } else if (type === 'HABIT') {
+                    // --- 处理删除习惯 ---
+                    if (step === 1) {
+                        // 进入第2步确认
+                        deleteActionState.step = 2;
+                        modalText.innerHTML = `<span class="text-red-600 font-bold">真的要删除 “${data.l2}” 吗？</span><br>此操作不可撤销。`;
+                        btnModalConfirm.textContent = '永久删除此习惯';
+                        btnModalConfirm.className = 'px-5 py-2 bg-red-700 text-white rounded-xl font-bold hover:bg-red-800 shadow-lg transition-colors animate-pulse';
+                    } else if (step === 2) {
+                        // 执行删除
+                        habits = habits.filter(h => !(h.l1 === data.l1 && h.l2 === data.l2));
+                        saveHabits();
+                        renderAddHabitList();   // 重新渲染“已添加列表”
+                        renderHabitChecklist(); // 重新渲染“今日习惯”列表
+                        cancelModal();
+                        showToast('习惯已删除', 'bg-gray-600');
+                    }
+                }
+            }
+
+            // --- 事件监听 ---
+            navAdd.addEventListener('click', () => showView('view-add'));
+            navTrack.addEventListener('click', () => showView('view-track'));
+            btnAddHabit.addEventListener('click', addHabit);
+            
+            btnInitiateClearLogs.addEventListener('click', initiateClearLogs);
+            btnModalCancel.addEventListener('click', cancelModal);
+            btnModalConfirm.addEventListener('click', confirmModalAction);
+            
+            let resizeTimer;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    if (viewTrack.classList.contains('active')) {
+                        renderDailyChart();
+                    }
+                }, 200);
+            });
+        });
+    </script>
+</body>
+</html>
