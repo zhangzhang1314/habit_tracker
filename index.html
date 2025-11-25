@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>习惯打卡 Pro v15 (日历算术修复版)</title>
+    <title>习惯打卡 Pro v16 (日历时间段导出)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Chosen Palette: Warm Neutrals -->
     <!-- Application Structure Plan:
          1. Views: Track, Add, Settings.
-         2. Fix: Corrected the 'pad' function and date concatenation logic to enforce String concatenation instead of Number addition.
-            (e.g., fixed bug where 2025 + 11 + 25 became 2061 instead of "20251125").
-         3. Preserved: All previous features and listeners.
+         2. Feature: Added Date Picker for ICS Export Start Date.
+         3. Logic: Filters logs based on the selected start date (00:00:00) up to now before generating ICS.
+         4. Preserved: All V15 fixes (Strict UTC, String Concatenation, Event Listeners).
     -->
     <style>
         .hidden { display: none; }
@@ -19,8 +19,7 @@
         .view.active { display: block; }
         
         .fireworks {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.1); z-index: 100;
             pointer-events: none; opacity: 0; transition: opacity 0.1s ease-out;
         }
@@ -133,21 +132,29 @@
         <div id="view-settings" class="view">
             <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-orange-100 space-y-6">
                 
-                <!-- 1. 导出到日历 (V15 修复版) -->
+                <!-- 1. 导出到日历 (V16 自定义时间版) -->
                 <div class="bg-green-50 p-4 rounded-lg border border-green-200">
                     <h3 class="font-bold text-green-800 mb-2 flex items-center">
-                        📅 导出到手机日历 (v15 格式修复)
+                        📅 导出到手机日历 (自定义时间段)
                     </h3>
                     <p class="text-xs text-gray-600 mb-3">
-                        生成标准的日历文件。如果之前提示“无有效日程”，请使用此版本重新下载。
+                        生成日历文件 (.ics)。您可以选择开始日期，截止日期默认为当前时间。
                     </p>
+                    
+                    <!-- 日期选择器 -->
+                    <div class="mb-3">
+                        <label for="ics-start-date" class="block text-xs font-bold text-green-800 mb-1">选择导出开始日期:</label>
+                        <input type="date" id="ics-start-date" class="block w-full px-3 py-2 border border-green-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm text-gray-700">
+                        <p class="text-[10px] text-green-600 mt-1">只导出从该日期（00:00）到现在的记录。</p>
+                    </div>
+
                     <button id="btn-export-ics" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm mb-3">
-                        下载日历文件 (.ics)
+                        下载日历文件
                     </button>
                     
                     <!-- 调试预览 -->
-                    <label class="block text-xs font-bold text-green-700 mb-1">日历文件内容预览 (调试用):</label>
-                    <textarea id="ics-preview" rows="4" readonly class="w-full border border-green-300 rounded-md p-2 text-xs bg-white text-gray-500" placeholder="点击上方下载按钮后，这里会显示生成的内容..."></textarea>
+                    <label class="block text-xs font-bold text-green-700 mb-1">日历文件内容预览:</label>
+                    <textarea id="ics-preview" rows="4" readonly class="w-full border border-green-300 rounded-md p-2 text-xs bg-white text-gray-500" placeholder="点击下载后，这里显示内容..."></textarea>
                 </div>
 
                 <hr class="border-gray-200">
@@ -180,13 +187,9 @@
 
     </div>
 
-    <!-- 提示框 -->
-    <div id="toast-message" class="hidden fixed top-8 left-1/2 -translate-x-1/2 bg-gradient-to-r from-orange-500 to-red-500 text-white px-8 py-3 rounded-full shadow-2xl z-50 text-center font-bold tracking-wide transform transition-all duration-300 scale-95 opacity-0">
-    </div>
-
+    <!-- UI Components -->
+    <div id="toast-message" class="hidden fixed top-8 left-1/2 -translate-x-1/2 bg-gradient-to-r from-orange-500 to-red-500 text-white px-8 py-3 rounded-full shadow-2xl z-50 text-center font-bold tracking-wide transform transition-all duration-300 scale-95 opacity-0"></div>
     <div id="fireworks-overlay" class="fireworks"></div>
-
-    <!-- 确认模态框 -->
     <div id="confirm-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full transform transition-all scale-100">
             <h3 class="text-xl font-bold text-gray-800" id="modal-title">⚠️ 确认操作</h3>
@@ -242,12 +245,17 @@
             const importArea = document.getElementById('import-area');
             const btnExportICS = document.getElementById('btn-export-ics');
             const icsPreview = document.getElementById('ics-preview');
+            const icsStartDateInput = document.getElementById('ics-start-date'); // Date Picker
 
             // Init
             loadData();
             renderAddHabitList();
             renderHabitChecklist();
             showView('view-track');
+            
+            // Set default date to today
+            const today = new Date().toISOString().split('T')[0];
+            icsStartDateInput.value = today;
 
             // --- Functions ---
             function loadData() {
@@ -412,10 +420,9 @@
                 } catch(e) { showToast('代码无效', 'bg-red-500'); }
             });
 
-            // --- ICS Logic (V15 FIX: String Concatenation) ---
+            // --- ICS Logic (V16 DATE FILTER) ---
             const formatICSDateUTC = (d) => {
-                const pad = n => n < 10 ? '0'+n : ''+n; // FORCE STRING RETURN
-                // Ensure all parts are strings before joining
+                const pad = n => n < 10 ? '0'+n : ''+n; // Force String
                 return d.getUTCFullYear() + 
                        pad(d.getUTCMonth() + 1) + 
                        pad(d.getUTCDate()) + 'T' + 
@@ -427,6 +434,18 @@
             btnExportICS.addEventListener('click', () => {
                 if (log.length === 0) { showToast('无打卡记录', 'bg-yellow-500'); return; }
                 
+                // Get Filter Date
+                const startDateVal = icsStartDateInput.value;
+                if (!startDateVal) { showToast('请选择开始日期', 'bg-red-500'); return; }
+                
+                const filterDate = new Date(startDateVal);
+                filterDate.setHours(0,0,0,0); // Start of selected day
+
+                // Filter logs
+                const filteredLog = log.filter(entry => entry.time >= filterDate.getTime());
+
+                if (filteredLog.length === 0) { showToast('该时间段内无打卡', 'bg-yellow-500'); return; }
+
                 const CRLF = '\r\n';
                 const nowStr = formatICSDateUTC(new Date());
                 
@@ -438,7 +457,7 @@
                     'METHOD:PUBLISH'
                 ].join(CRLF) + CRLF;
 
-                log.forEach((entry, idx) => {
+                filteredLog.forEach((entry, idx) => {
                     const d = new Date(entry.time);
                     const dtStart = formatICSDateUTC(d);
                     const e = new Date(d.getTime() + 15 * 60000); 
@@ -485,7 +504,7 @@
                 }
             }
 
-            // Restored Listeners
+            // Event Listeners
             navAdd.addEventListener('click', () => showView('view-add'));
             navTrack.addEventListener('click', () => showView('view-track'));
             navSettings.addEventListener('click', () => showView('view-settings'));
