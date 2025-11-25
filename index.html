@@ -3,15 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>习惯打卡 Pro v8 (iOS日历修复版)</title>
+    <title>习惯打卡 Pro v9 (UTC修复版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Chosen Palette: Warm Neutrals with Pastel Accents -->
     <!-- Application Structure Plan:
          1. Views: Track, Add, Settings.
-         2. Fix: ICS generation now uses CRLF (\r\n) line endings required by iOS Calendar.
-         3. Fix: Added METHOD:PUBLISH and proper UTC formatting for DTSTAMP to ensure compatibility.
-         4. Preserved: All previous features (Data sync, Delete confirm, Fireworks).
+         2. Fix: ICS Export now uses strict UTC format (YYYYMMDDTHHMMSSZ) to satisfy iOS Calendar strict validation.
+         3. Preserved: All previous features.
     -->
     <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
     <style>
@@ -164,13 +163,13 @@
         <div id="view-settings" class="view">
             <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-orange-100 space-y-6">
                 
-                <!-- 1. 导出到日历 (修复版) -->
+                <!-- 1. 导出到日历 (UTC修复版) -->
                 <div class="bg-green-50 p-4 rounded-lg border border-green-200">
                     <h3 class="font-bold text-green-800 mb-2 flex items-center">
-                        📅 导出到手机日历 (修复版)
+                        📅 导出到手机日历 (UTC修复版)
                     </h3>
                     <p class="text-xs text-gray-600 mb-3">
-                        将打卡记录生成标准日历文件。支持 iPhone 日历完美导入。
+                        将打卡记录生成标准 ICS 文件。下载后点击打开，系统会自动识别并导入。
                     </p>
                     <button id="btn-export-ics" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm">
                         下载日历文件 (.ics)
@@ -771,7 +770,7 @@
                 const data = {
                     habits: habits,
                     log: log,
-                    version: 'v8'
+                    version: 'v9'
                 };
                 const dataStr = JSON.stringify(data);
                 
@@ -814,15 +813,16 @@
                 }
             });
 
-            // *** FIXED: ICS Export with proper CRLF and strict formatting ***
-            const formatICSDate = (date) => {
+            // *** FIXED: ICS Export with STRICT UTC (v9) ***
+            // Helper to format date to YYYYMMDDTHHMMSSZ (UTC)
+            const formatICSDateUTC = (date) => {
                 const pad = (n) => n < 10 ? '0' + n : n;
-                return date.getFullYear() +
-                       pad(date.getMonth() + 1) +
-                       pad(date.getDate()) + 'T' +
-                       pad(date.getHours()) +
-                       pad(date.getMinutes()) +
-                       pad(date.getSeconds());
+                return date.getUTCFullYear() +
+                       pad(date.getUTCMonth() + 1) +
+                       pad(date.getUTCDate()) + 'T' +
+                       pad(date.getUTCHours()) +
+                       pad(date.getUTCMinutes()) +
+                       pad(date.getUTCSeconds()) + 'Z';
             };
 
             btnExportICS.addEventListener('click', () => {
@@ -831,7 +831,7 @@
                     return;
                 }
 
-                // *** CORE FIX: Strict CRLF line endings for iOS ***
+                // Strict CRLF line endings for iOS
                 const CRLF = '\r\n';
                 
                 let icsContent = [
@@ -839,22 +839,22 @@
                     'VERSION:2.0',
                     'PRODID:-//HabitTrackerPro//CN',
                     'CALSCALE:GREGORIAN',
-                    'METHOD:PUBLISH' // Helps iOS recognition
+                    'METHOD:PUBLISH'
                 ].join(CRLF) + CRLF;
 
                 log.forEach((entry, index) => {
                     const d = new Date(entry.time);
-                    const dateStr = formatICSDate(d);
+                    const dateStr = formatICSDateUTC(d);
                     
-                    // End time (5 mins)
-                    const e = new Date(d.getTime() + 5 * 60 * 1000);
-                    const endDateStr = formatICSDate(e);
+                    // Event duration: 15 mins (Standard short event)
+                    const e = new Date(d.getTime() + 15 * 60 * 1000);
+                    const endDateStr = formatICSDateUTC(e);
 
-                    // UTC timestamp for DTSTAMP (required)
-                    const dtstamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+                    // UTC timestamp for DTSTAMP
+                    const dtstamp = formatICSDateUTC(new Date());
 
-                    // Unique ID
-                    const uid = `${entry.time}-${index}@habit-tracker.local`;
+                    // Unique ID (Simple format)
+                    const uid = `habit-${entry.time}-${index}`;
                     const summary = `✅ 打卡: ${entry.habit}`;
 
                     const event = [
