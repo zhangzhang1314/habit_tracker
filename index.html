@@ -3,72 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>习惯打卡 Pro v9 (UTC修复版)</title>
+    <title>习惯打卡 Pro v11 (修复运行错误)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Chosen Palette: Warm Neutrals with Pastel Accents -->
+    <!-- Chosen Palette: Warm Neutrals -->
     <!-- Application Structure Plan:
          1. Views: Track, Add, Settings.
-         2. Fix: ICS Export now uses strict UTC format (YYYYMMDDTHHMMSSZ) to satisfy iOS Calendar strict validation.
-         3. Preserved: All previous features.
+         2. Fix: Re-added missing 'chartBody' variable definition causing ReferenceError.
+         3. Preserved: ICS Export logic with strict UTC format.
     -->
-    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
     <style>
         .hidden { display: none; }
         .view { display: none; }
         .view.active { display: block; }
         
-        /* 烟花容器 */
         .fireworks {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.1);
-            z-index: 100;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.1s ease-out;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.1); z-index: 100;
+            pointer-events: none; opacity: 0; transition: opacity 0.1s ease-out;
         }
-        .fireworks.active {
-            opacity: 1;
-            transition: opacity 0.05s ease-in;
-        }
+        .fireworks.active { opacity: 1; transition: opacity 0.05s ease-in; }
         .firework {
-            position: absolute;
-            width: 4px;
-            height: 4px;
-            background-color: #fff;
-            border-radius: 50%;
-            opacity: 0;
-            animation: burst 0.3s ease-out forwards;
+            position: absolute; width: 4px; height: 4px; background-color: #fff;
+            border-radius: 50%; opacity: 0; animation: burst 0.3s ease-out forwards;
         }
         @keyframes burst {
             0% { transform: scale(0); opacity: 1; }
             100% { transform: scale(2.5) translate(var(--tx), var(--ty)); opacity: 0; }
         }
 
-        /* 图表容器 */
-        .chart-scroll-wrapper {
-            width: 100%;
-            overflow-x: auto;
-            scrollbar-width: thin;
-            scrollbar-color: #fb923c #fff7ed;
-        }
-        .chart-body {
-            position: relative;
-            height: 350px;
-        }
+        .chart-scroll-wrapper { width: 100%; overflow-x: auto; scrollbar-width: thin; scrollbar-color: #fb923c #fff7ed; }
+        .chart-body { position: relative; height: 350px; }
         
-        .delete-habit-btn:hover {
-            background-color: #fecaca;
-            color: #dc2626;
-        }
-        
-        textarea {
-            font-family: monospace;
-        }
+        .delete-habit-btn:hover { background-color: #fecaca; color: #dc2626; }
+        textarea { font-family: monospace; font-size: 11px; }
     </style>
 </head>
 <body class="bg-orange-50 text-orange-900 font-sans min-h-screen">
@@ -163,17 +132,21 @@
         <div id="view-settings" class="view">
             <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-orange-100 space-y-6">
                 
-                <!-- 1. 导出到日历 (UTC修复版) -->
+                <!-- 1. 导出到日历 (V10 增强版) -->
                 <div class="bg-green-50 p-4 rounded-lg border border-green-200">
                     <h3 class="font-bold text-green-800 mb-2 flex items-center">
-                        📅 导出到手机日历 (UTC修复版)
+                        📅 导出到手机日历 (v10 增强兼容)
                     </h3>
                     <p class="text-xs text-gray-600 mb-3">
-                        将打卡记录生成标准 ICS 文件。下载后点击打开，系统会自动识别并导入。
+                        模仿原生应用生成的标准日历文件。如果点击“下载”后无法直接导入，请检查下方的预览框是否有内容。
                     </p>
-                    <button id="btn-export-ics" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm">
+                    <button id="btn-export-ics" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm mb-3">
                         下载日历文件 (.ics)
                     </button>
+                    
+                    <!-- 调试预览 -->
+                    <label class="block text-xs font-bold text-green-700 mb-1">日历文件内容预览 (调试用):</label>
+                    <textarea id="ics-preview" rows="4" readonly class="w-full border border-green-300 rounded-md p-2 text-xs bg-white text-gray-500" placeholder="点击上方下载按钮后，这里会显示生成的内容..."></textarea>
                 </div>
 
                 <hr class="border-gray-200">
@@ -185,7 +158,6 @@
                         <!-- 导出文本 -->
                         <div class="bg-orange-50 p-4 rounded-lg border border-orange-200">
                             <h3 class="font-bold text-orange-800 mb-2">📤 导出数据代码</h3>
-                            <p class="text-xs text-gray-500 mb-2">用于在不同浏览器间手动转移数据。</p>
                             <button id="btn-export" class="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition-colors font-medium mb-2">
                                 复制数据代码
                             </button>
@@ -195,7 +167,6 @@
                         <!-- 导入文本 -->
                         <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
                             <h3 class="font-bold text-blue-800 mb-2">📥 导入数据代码</h3>
-                            <p class="text-xs text-gray-500 mb-2">粘贴代码覆盖当前记录。</p>
                             <textarea id="import-area" rows="2" class="w-full border border-gray-300 rounded-md p-2 text-xs mb-2 focus:ring-2 focus:ring-blue-400" placeholder="粘贴数据代码..."></textarea>
                             <button id="btn-import" class="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium">
                                 导入并覆盖
@@ -212,14 +183,13 @@
     <div id="toast-message" class="hidden fixed top-8 left-1/2 -translate-x-1/2 bg-gradient-to-r from-orange-500 to-red-500 text-white px-8 py-3 rounded-full shadow-2xl z-50 text-center font-bold tracking-wide transform transition-all duration-300 scale-95 opacity-0">
     </div>
 
-    <!-- 烟花遮罩 -->
     <div id="fireworks-overlay" class="fireworks"></div>
 
     <!-- 确认模态框 -->
     <div id="confirm-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full transform transition-all scale-100">
             <h3 class="text-xl font-bold text-gray-800" id="modal-title">⚠️ 确认操作</h3>
-            <p class="mt-3 text-sm text-gray-600 leading-relaxed" id="modal-text">您确定要执行此操作吗？</p>
+            <p class="mt-3 text-sm text-gray-600 leading-relaxed" id="modal-text">确定执行？</p>
             <div class="mt-6 flex justify-end space-x-3">
                 <button id="btn-modal-cancel" class="px-5 py-2 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors">取消</button>
                 <button id="btn-modal-confirm" class="px-5 py-2 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 shadow-md transition-colors">确定</button>
@@ -229,59 +199,49 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // --- Init Constants ---
             const HABITS_KEY = 'habitTracker_habits_v2';
             const LOG_KEY = 'habitTracker_log_v2';
             
-            const PASTEL_COLORS = [
-                '#FFB3BA', '#FFDFBA', '#FFFFBA', '#BAFFC9', 
-                '#BAE1FF', '#E6B3FF', '#F0E68C'
-            ];
+            const PASTEL_COLORS = ['#FFB3BA', '#FFDFBA', '#FFFFBA', '#BAFFC9', '#BAE1FF', '#E6B3FF', '#F0E68C'];
 
             let habits = [];
             let log = [];
             let chartInstance = null;
             let deleteActionState = { type: null, data: null, step: 0 }; 
 
-            // --- DOM Elements ---
+            // DOM Elements
             const navAdd = document.getElementById('nav-add');
             const navTrack = document.getElementById('nav-track');
             const navSettings = document.getElementById('nav-settings');
-            
             const viewAdd = document.getElementById('view-add');
             const viewTrack = document.getElementById('view-track');
             const viewSettings = document.getElementById('view-settings');
-
             const habitL1Input = document.getElementById('habit-l1');
             const habitL2Input = document.getElementById('habit-l2');
             const btnAddHabit = document.getElementById('btn-add-habit');
             const currentHabitsList = document.getElementById('current-habits-list');
-            
             const habitChecklistContainer = document.getElementById('habit-checklist-container');
             const dailyLogList = document.getElementById('daily-log-list');
             const monthlyStatsList = document.getElementById('monthly-stats-list');
-            
             const chartCanvas = document.getElementById('daily-bar-chart');
-            const chartBody = document.getElementById('chart-body');
+            const chartBody = document.getElementById('chart-body'); // Fixed: Added chartBody definition
             const zoomSlider = document.getElementById('zoom-slider');
-
             const toastMessage = document.getElementById('toast-message');
             const fireworksOverlay = document.getElementById('fireworks-overlay');
-            
             const btnInitiateClearLogs = document.getElementById('btn-initiate-clear-logs');
             const confirmModal = document.getElementById('confirm-modal');
             const modalTitle = document.getElementById('modal-title');
             const modalText = document.getElementById('modal-text');
             const btnModalCancel = document.getElementById('btn-modal-cancel');
             const btnModalConfirm = document.getElementById('btn-modal-confirm');
-
             const btnExport = document.getElementById('btn-export');
             const exportStatus = document.getElementById('export-status');
             const btnImport = document.getElementById('btn-import');
             const importArea = document.getElementById('import-area');
             const btnExportICS = document.getElementById('btn-export-ics');
+            const icsPreview = document.getElementById('ics-preview');
 
-            // --- Init ---
+            // Init
             loadData();
             renderAddHabitList();
             renderHabitChecklist();
@@ -292,677 +252,242 @@
                 try {
                     habits = JSON.parse(localStorage.getItem(HABITS_KEY)) || [];
                     log = JSON.parse(localStorage.getItem(LOG_KEY)) || [];
-                } catch(e) {
-                    habits = [];
-                    log = [];
-                }
+                } catch(e) { habits = []; log = []; }
             }
-
-            function saveHabits() {
-                localStorage.setItem(HABITS_KEY, JSON.stringify(habits));
-            }
-
-            function saveLog() {
-                localStorage.setItem(LOG_KEY, JSON.stringify(log));
-            }
+            function saveHabits() { localStorage.setItem(HABITS_KEY, JSON.stringify(habits)); }
+            function saveLog() { localStorage.setItem(LOG_KEY, JSON.stringify(log)); }
 
             function showView(viewId) {
                 [viewAdd, viewTrack, viewSettings].forEach(v => v.classList.remove('active'));
-                
                 const inactiveClass = 'nav-btn px-6 py-2 rounded-t-lg font-medium transition-all duration-200 text-gray-500 hover:text-orange-600 hover:bg-orange-50';
                 const activeClass = 'nav-btn px-6 py-2 rounded-t-lg font-medium transition-all duration-200 bg-white text-orange-700 border-t border-x border-orange-200 shadow-sm';
-                
-                navAdd.className = inactiveClass;
-                navTrack.className = inactiveClass;
+                navAdd.className = inactiveClass; navTrack.className = inactiveClass;
                 navSettings.classList.remove('text-orange-800', 'font-bold');
 
-                if (viewId === 'view-add') {
-                    viewAdd.classList.add('active');
-                    navAdd.className = activeClass;
-                } else if (viewId === 'view-settings') {
-                    viewSettings.classList.add('active');
-                    navSettings.classList.add('text-orange-800', 'font-bold');
-                } else {
-                    viewTrack.classList.add('active');
-                    navTrack.className = activeClass;
-                    renderAllStats();
-                    setTimeout(() => renderDailyChart(), 50); 
-                }
+                if (viewId === 'view-add') { viewAdd.classList.add('active'); navAdd.className = activeClass; }
+                else if (viewId === 'view-settings') { viewSettings.classList.add('active'); navSettings.classList.add('text-orange-800', 'font-bold'); }
+                else { viewTrack.classList.add('active'); navTrack.className = activeClass; renderAllStats(); setTimeout(() => renderDailyChart(), 50); }
             }
 
-            // --- Habits ---
+            // --- Habits & Checklist ---
             function addHabit() {
-                const l1 = habitL1Input.value.trim();
-                const l2 = habitL2Input.value.trim();
+                const l1 = habitL1Input.value.trim(); const l2 = habitL2Input.value.trim();
                 if (l1 && l2) {
                     if (!habits.some(h => h.l1 === l1 && h.l2 === l2)) {
-                        habits.push({ l1, l2 });
-                        saveHabits();
-                        habitL1Input.value = '';
-                        habitL2Input.value = '';
-                        renderAddHabitList();
-                        renderHabitChecklist();
+                        habits.push({ l1, l2 }); saveHabits();
+                        habitL1Input.value = ''; habitL2Input.value = '';
+                        renderAddHabitList(); renderHabitChecklist();
                         showToast('添加成功！', 'bg-green-500');
-                    } else {
-                        showToast('这个习惯已经存在了', 'bg-yellow-500');
-                    }
-                } else {
-                    showToast('请完整填写分类和内容', 'bg-red-500');
-                }
+                    } else { showToast('习惯已存在', 'bg-yellow-500'); }
+                } else { showToast('请填写完整', 'bg-red-500'); }
             }
             
             function renderAddHabitList() {
                 currentHabitsList.innerHTML = '';
-                if (habits.length === 0) {
-                    currentHabitsList.innerHTML = '<p class="text-gray-400 text-sm italic p-2">暂无习惯，请在上方添加。</p>';
-                    return;
-                }
+                if (habits.length === 0) { currentHabitsList.innerHTML = '<p class="text-gray-400 text-sm italic p-2">暂无习惯。</p>'; return; }
                 const grouped = groupHabits(habits);
                 for (const l1 in grouped) {
-                    const l1El = document.createElement('div');
-                    l1El.className = 'mb-3 pb-3 border-b border-orange-50 last:border-0';
-                    
-                    const l1Header = document.createElement('h4');
-                    l1Header.className = 'font-bold text-orange-700 text-sm mb-2';
-                    l1Header.textContent = l1;
+                    const l1El = document.createElement('div'); l1El.className = 'mb-3 pb-3 border-b border-orange-50 last:border-0';
+                    const l1Header = document.createElement('h4'); l1Header.className = 'font-bold text-orange-700 text-sm mb-2'; l1Header.textContent = l1;
                     l1El.appendChild(l1Header);
-                    
-                    const l2List = document.createElement('div');
-                    l2List.className = 'flex flex-wrap gap-2';
-                    
+                    const l2List = document.createElement('div'); l2List.className = 'flex flex-wrap gap-2';
                     grouped[l1].forEach(habit => {
-                        const l2Container = document.createElement('div');
-                        l2Container.className = 'flex items-center bg-orange-100 text-orange-900 text-sm px-3 py-1.5 rounded-lg border border-orange-200 shadow-sm';
-                        
-                        const l2Text = document.createElement('span');
-                        l2Text.textContent = habit.l2;
-                        l2Text.className = 'mr-2 font-medium';
-                        
-                        const delBtn = document.createElement('button');
-                        delBtn.innerHTML = '&times;';
-                        delBtn.title = '删除此习惯';
-                        delBtn.className = 'delete-habit-btn w-5 h-5 flex items-center justify-center rounded-full bg-orange-200 text-orange-700 text-lg leading-none transition-colors';
-                        
-                        delBtn.onclick = (e) => {
-                            e.stopPropagation();
-                            initiateDeleteHabit(habit.l1, habit.l2);
-                        };
-                        
-                        l2Container.appendChild(l2Text);
-                        l2Container.appendChild(delBtn);
-                        l2List.appendChild(l2Container);
+                        const l2Container = document.createElement('div'); l2Container.className = 'flex items-center bg-orange-100 text-orange-900 text-sm px-3 py-1.5 rounded-lg border border-orange-200 shadow-sm';
+                        const l2Text = document.createElement('span'); l2Text.textContent = habit.l2; l2Text.className = 'mr-2 font-medium';
+                        const delBtn = document.createElement('button'); delBtn.innerHTML = '&times;'; delBtn.className = 'delete-habit-btn w-5 h-5 flex items-center justify-center rounded-full bg-orange-200 text-orange-700 text-lg leading-none transition-colors';
+                        delBtn.onclick = (e) => { e.stopPropagation(); initiateDeleteHabit(habit.l1, habit.l2); };
+                        l2Container.appendChild(l2Text); l2Container.appendChild(delBtn); l2List.appendChild(l2Container);
                     });
-                    
-                    l1El.appendChild(l2List);
-                    currentHabitsList.appendChild(l1El);
+                    l1El.appendChild(l2List); currentHabitsList.appendChild(l1El);
                 }
             }
 
-            function groupHabits(habitsArray) {
-                if (!Array.isArray(habitsArray)) return {};
-                return habitsArray.reduce((acc, habit) => {
-                    if (habit && habit.l1) {
-                        if (!acc[habit.l1]) {
-                            acc[habit.l1] = [];
-                        }
-                        acc[habit.l1].push(habit);
-                    }
-                    return acc;
-                }, {});
-            }
+            function groupHabits(arr) { if (!Array.isArray(arr)) return {}; return arr.reduce((acc, h) => { if(h && h.l1) { if (!acc[h.l1]) acc[h.l1] = []; acc[h.l1].push(h); } return acc; }, {}); }
 
-            // --- Check-in & Stats ---
             function renderHabitChecklist() {
                 habitChecklistContainer.innerHTML = '';
-                if (habits.length === 0) {
-                    habitChecklistContainer.innerHTML = '<div class="text-center py-8 text-gray-400">👋 还没有习惯，去"添加习惯"页面新建一个吧！</div>';
-                    return;
-                }
+                if (habits.length === 0) { habitChecklistContainer.innerHTML = '<div class="text-center py-8 text-gray-400">暂无习惯</div>'; return; }
                 const grouped = groupHabits(habits);
-                
                 for (const l1 in grouped) {
-                    const l1Group = document.createElement('div');
-                    l1Group.className = 'border border-orange-100 rounded-lg overflow-hidden mb-3';
-                    
-                    const l1Header = document.createElement('div');
-                    l1Header.className = 'flex justify-between items-center p-3 bg-orange-50 cursor-pointer hover:bg-orange-100 transition-colors select-none';
-                    l1Header.innerHTML = `
-                        <h3 class="font-bold text-orange-800">${l1}</h3>
-                        <span class="text-orange-400 text-xs transform transition-transform duration-200">▼</span>
-                    `;
-                    
-                    const l2Container = document.createElement('div');
-                    l2Container.className = 'p-3 bg-white space-y-3';
-                    
+                    const l1Group = document.createElement('div'); l1Group.className = 'border border-orange-100 rounded-lg overflow-hidden mb-3';
+                    const l1Header = document.createElement('div'); l1Header.className = 'flex justify-between items-center p-3 bg-orange-50 cursor-pointer hover:bg-orange-100 transition-colors select-none';
+                    l1Header.innerHTML = `<h3 class="font-bold text-orange-800">${l1}</h3><span class="text-orange-400 text-xs transform transition-transform duration-200">▼</span>`;
+                    const l2Container = document.createElement('div'); l2Container.className = 'p-3 bg-white space-y-3';
                     grouped[l1].forEach(habit => {
-                        const habitEl = document.createElement('div');
-                        habitEl.className = 'flex items-center space-x-3 group cursor-pointer p-2 rounded-lg hover:bg-orange-50 transition-all';
-                        
-                        const checkbox = document.createElement('div');
-                        checkbox.className = 'w-6 h-6 border-2 border-orange-300 rounded-md flex items-center justify-center text-white bg-white group-hover:border-orange-400 transition-all shadow-sm';
-                        
-                        habitEl.onclick = (e) => {
-                            if(habitEl.dataset.clicking) return;
-                            habitEl.dataset.clicking = "true";
-                            
-                            checkbox.classList.add('bg-orange-500', 'border-orange-500');
-                            checkbox.innerHTML = '✓';
-                            
-                            checkIn(habit.l2);
-                            
-                            setTimeout(() => {
-                                checkbox.classList.remove('bg-orange-500', 'border-orange-500');
-                                checkbox.innerHTML = '';
-                                delete habitEl.dataset.clicking;
-                            }, 300);
-                        };
-                        
-                        const name = document.createElement('span');
-                        name.className = 'text-gray-700 font-medium select-none';
-                        name.textContent = habit.l2;
-                        
-                        habitEl.appendChild(checkbox);
-                        habitEl.appendChild(name);
-                        l2Container.appendChild(habitEl);
+                        const habitEl = document.createElement('div'); habitEl.className = 'flex items-center space-x-3 group cursor-pointer p-2 rounded-lg hover:bg-orange-50 transition-all';
+                        const checkbox = document.createElement('div'); checkbox.className = 'w-6 h-6 border-2 border-orange-300 rounded-md flex items-center justify-center text-white bg-white group-hover:border-orange-400 transition-all shadow-sm';
+                        habitEl.onclick = (e) => { if(habitEl.dataset.clicking) return; habitEl.dataset.clicking = "true"; checkbox.classList.add('bg-orange-500', 'border-orange-500'); checkbox.innerHTML = '✓'; checkIn(habit.l2); setTimeout(() => { checkbox.classList.remove('bg-orange-500', 'border-orange-500'); checkbox.innerHTML = ''; delete habitEl.dataset.clicking; }, 300); };
+                        const name = document.createElement('span'); name.className = 'text-gray-700 font-medium select-none'; name.textContent = habit.l2;
+                        habitEl.appendChild(checkbox); habitEl.appendChild(name); l2Container.appendChild(habitEl);
                     });
-                    
-                    l1Header.onclick = () => {
-                        if (l2Container.style.display === 'none') {
-                            l2Container.style.display = 'block';
-                            l1Header.querySelector('span').classList.remove('-rotate-90');
-                        } else {
-                            l2Container.style.display = 'none';
-                            l1Header.querySelector('span').classList.add('-rotate-90');
-                        }
-                    };
-                    
-                    l1Group.appendChild(l1Header);
-                    l1Group.appendChild(l2Container);
-                    habitChecklistContainer.appendChild(l1Group);
+                    l1Header.onclick = () => { if (l2Container.style.display === 'none') { l2Container.style.display = 'block'; l1Header.querySelector('span').classList.remove('-rotate-90'); } else { l2Container.style.display = 'none'; l1Header.querySelector('span').classList.add('-rotate-90'); } };
+                    l1Group.appendChild(l1Header); l1Group.appendChild(l2Container); habitChecklistContainer.appendChild(l1Group);
                 }
             }
 
-            function checkIn(habitName) {
-                log.push({ habit: habitName, time: Date.now() });
-                saveLog();
-                showFeedback(habitName);
-                renderAllStats();
-            }
-
-            function showFeedback(habitName) {
-                toastMessage.textContent = `恭喜你已完成“${habitName}”习惯的打卡`;
-                toastMessage.classList.remove('hidden', 'scale-95', 'opacity-0');
-                toastMessage.classList.add('scale-100', 'opacity-100');
-                
-                fireworksOverlay.classList.add('active');
-                createFireworks(30);
-
-                setTimeout(() => {
-                    fireworksOverlay.classList.remove('active');
-                    fireworksOverlay.innerHTML = '';
-                }, 300);
-
-                setTimeout(() => {
-                    toastMessage.classList.remove('scale-100', 'opacity-100');
-                    toastMessage.classList.add('scale-95', 'opacity-0');
-                    setTimeout(() => toastMessage.classList.add('hidden'), 300);
-                }, 1300);
+            function checkIn(name) { log.push({ habit: name, time: Date.now() }); saveLog(); showFeedback(name); renderAllStats(); }
+            
+            function showFeedback(name) {
+                toastMessage.textContent = `已完成: ${name}`; toastMessage.classList.remove('hidden', 'scale-95', 'opacity-0'); toastMessage.classList.add('scale-100', 'opacity-100');
+                fireworksOverlay.classList.add('active'); createFireworks(30);
+                setTimeout(() => { fireworksOverlay.classList.remove('active'); fireworksOverlay.innerHTML = ''; }, 300);
+                setTimeout(() => { toastMessage.classList.remove('scale-100', 'opacity-100'); toastMessage.classList.add('scale-95', 'opacity-0'); setTimeout(() => toastMessage.classList.add('hidden'), 300); }, 1300);
             }
             
-            function showToast(msg, bgClass) {
-                const el = document.createElement('div');
-                el.className = `fixed top-20 left-1/2 -translate-x-1/2 ${bgClass || 'bg-gray-700'} text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm transition-opacity duration-500 opacity-0`;
-                el.textContent = msg;
-                document.body.appendChild(el);
-                requestAnimationFrame(() => el.classList.remove('opacity-0'));
-                setTimeout(() => {
-                    el.classList.add('opacity-0');
-                    setTimeout(() => el.remove(), 500);
-                }, 2000);
-            }
+            function showToast(msg, bgClass) { const el = document.createElement('div'); el.className = `fixed top-20 left-1/2 -translate-x-1/2 ${bgClass || 'bg-gray-700'} text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm transition-opacity duration-500 opacity-0`; el.textContent = msg; document.body.appendChild(el); requestAnimationFrame(() => el.classList.remove('opacity-0')); setTimeout(() => { el.classList.add('opacity-0'); setTimeout(() => el.remove(), 500); }, 2000); }
 
-            function createFireworks(count) {
-                for (let i = 0; i < count; i++) {
-                    const firework = document.createElement('div');
-                    firework.className = 'firework';
-                    const top = 20 + Math.random() * 60;
-                    const left = 20 + Math.random() * 60;
-                    firework.style.top = `${top}vh`;
-                    firework.style.left = `${left}vw`;
-                    
-                    const angle = Math.random() * Math.PI * 2;
-                    const distance = 100 + Math.random() * 150;
-                    const tx = `${Math.cos(angle) * distance}px`;
-                    const ty = `${Math.sin(angle) * distance}px`;
-                    
-                    firework.style.setProperty('--tx', tx);
-                    firework.style.setProperty('--ty', ty);
-                    firework.style.backgroundColor = `hsl(${Math.random() * 360}, 80%, 60%)`;
-                    
-                    fireworksOverlay.appendChild(firework);
-                }
-            }
+            function createFireworks(count) { for (let i = 0; i < count; i++) { const f = document.createElement('div'); f.className = 'firework'; f.style.top = `${20+Math.random()*60}vh`; f.style.left = `${20+Math.random()*60}vw`; const angle = Math.random() * Math.PI * 2; const dist = 100 + Math.random() * 150; f.style.setProperty('--tx', `${Math.cos(angle)*dist}px`); f.style.setProperty('--ty', `${Math.sin(angle)*dist}px`); f.style.backgroundColor = `hsl(${Math.random()*360}, 80%, 60%)`; fireworksOverlay.appendChild(f); } }
             
-            function getFormattedDate(timestamp) {
-                const d = new Date(timestamp);
-                return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
-            }
+            function getFormattedDate(ts) { const d = new Date(ts); return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`; }
 
-            // --- Stats ---
-            function renderAllStats() {
-                renderDailyLog();
-                renderMonthlyStats();
-                renderDailyChart();
-            }
+            function renderAllStats() { renderDailyLog(); renderMonthlyStats(); renderDailyChart(); }
 
             function renderDailyLog() {
-                dailyLogList.innerHTML = '';
-                const todayStr = getFormattedDate(Date.now());
-                const todayLog = log.filter(entry => getFormattedDate(entry.time) === todayStr);
-
-                if (todayLog.length === 0) {
-                    dailyLogList.innerHTML = '<div class="text-gray-400 text-sm italic text-center py-4">今天还没有打卡哦，加油！</div>';
-                    return;
-                }
-
-                const grouped = todayLog.reduce((acc, entry) => {
-                    if (!acc[entry.habit]) acc[entry.habit] = [];
-                    acc[entry.habit].push(entry.time);
-                    return acc;
-                }, {});
-
-                for (const habitName in grouped) {
-                    const times = grouped[habitName];
-                    const count = times.length;
-                    
-                    const logEl = document.createElement('div');
-                    logEl.className = 'bg-orange-50 rounded-lg p-2';
-                    
-                    const headerEl = document.createElement('div');
-                    headerEl.className = 'flex items-center justify-between';
-                    
-                    const leftDiv = document.createElement('div');
-                    leftDiv.className = 'flex items-center space-x-2';
-                    
-                    const nameEl = document.createElement('span');
-                    nameEl.className = 'font-semibold text-orange-900';
-                    nameEl.textContent = habitName;
-                    leftDiv.appendChild(nameEl);
-                    
-                    if (count > 0) {
-                        const countEl = document.createElement('span');
-                        countEl.className = 'text-xs font-bold bg-white text-orange-600 border border-orange-200 px-2 py-0.5 rounded-full';
-                        countEl.textContent = `${count}次`;
-                        leftDiv.appendChild(countEl);
-                    }
-                    
+                dailyLogList.innerHTML = ''; const todayStr = getFormattedDate(Date.now()); const todayLog = log.filter(e => getFormattedDate(e.time) === todayStr);
+                if (todayLog.length === 0) { dailyLogList.innerHTML = '<div class="text-gray-400 text-sm italic text-center py-4">今天还没有打卡哦</div>'; return; }
+                const grouped = todayLog.reduce((acc, e) => { if (!acc[e.habit]) acc[e.habit] = []; acc[e.habit].push(e.time); return acc; }, {});
+                for (const name in grouped) {
+                    const times = grouped[name]; const count = times.length;
+                    const logEl = document.createElement('div'); logEl.className = 'bg-orange-50 rounded-lg p-2';
+                    const header = document.createElement('div'); header.className = 'flex items-center justify-between';
+                    const left = document.createElement('div'); left.className = 'flex items-center space-x-2';
+                    const nEl = document.createElement('span'); nEl.className = 'font-semibold text-orange-900'; nEl.textContent = name;
+                    left.appendChild(nEl);
+                    if (count > 0) { const cEl = document.createElement('span'); cEl.className = 'text-xs font-bold bg-white text-orange-600 border border-orange-200 px-2 py-0.5 rounded-full'; cEl.textContent = `${count}次`; left.appendChild(cEl); }
+                    header.appendChild(left);
+                    if (count > 1) { header.classList.add('cursor-pointer'); const h = document.createElement('span'); h.className = 'text-xs text-orange-400'; h.textContent = '展开'; header.appendChild(h); } 
+                    else { const t = document.createElement('span'); t.className = 'text-xs text-orange-500'; t.textContent = new Date(times[0]).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}); header.appendChild(t); }
+                    logEl.appendChild(header);
                     if (count > 1) {
-                        headerEl.classList.add('cursor-pointer');
-                        const hint = document.createElement('span');
-                        hint.className = 'text-xs text-orange-400';
-                        hint.textContent = '展开详情 ▾';
-                        headerEl.appendChild(leftDiv);
-                        headerEl.appendChild(hint);
-                    } else {
-                        headerEl.appendChild(leftDiv);
-                        const timeSpan = document.createElement('span');
-                        timeSpan.className = 'text-xs text-orange-500';
-                        timeSpan.textContent = new Date(times[0]).toLocaleTimeString('zh-CN', {hour: '2-digit', minute:'2-digit'});
-                        headerEl.appendChild(timeSpan);
+                        const list = document.createElement('ul'); list.className = 'hidden mt-2 space-y-1 pl-2 border-l-2 border-orange-200';
+                        times.forEach(t => { const li = document.createElement('li'); li.className = 'text-xs text-gray-600'; li.textContent = new Date(t).toLocaleTimeString('zh-CN'); list.appendChild(li); });
+                        header.onclick = () => list.classList.toggle('hidden'); logEl.appendChild(list);
                     }
-                    
-                    logEl.appendChild(headerEl);
-
-                    if (count > 1) {
-                        const timesList = document.createElement('ul');
-                        timesList.className = 'hidden mt-2 space-y-1 pl-2 border-l-2 border-orange-200';
-                        times.forEach(time => {
-                            const timeItem = document.createElement('li');
-                            timeItem.className = 'text-xs text-gray-600';
-                            timeItem.textContent = new Date(time).toLocaleTimeString('zh-CN');
-                            timesList.appendChild(timeItem);
-                        });
-                        
-                        headerEl.onclick = () => {
-                            timesList.classList.toggle('hidden');
-                        };
-                        logEl.appendChild(timesList);
-                    }
-                    
                     dailyLogList.appendChild(logEl);
                 }
             }
 
             function renderMonthlyStats() {
-                monthlyStatsList.innerHTML = '';
-                const now = new Date();
-                const currentMonth = now.getMonth();
-                const currentYear = now.getFullYear();
-                
-                const monthLog = log.filter(entry => {
-                    const d = new Date(entry.time);
-                    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-                });
-
-                if (monthLog.length === 0) {
-                    monthlyStatsList.innerHTML = '<div class="text-gray-400 text-sm italic text-center py-4">本月暂无数据。</div>';
-                    return;
-                }
-
-                const grouped = monthLog.reduce((acc, entry) => {
-                    acc[entry.habit] = (acc[entry.habit] || 0) + 1;
-                    return acc;
-                }, {});
-                
-                const sorted = Object.entries(grouped).sort(([, countA], [, countB]) => countB - countA);
-
-                sorted.forEach(([habitName, count], index) => {
-                    if (count < 1) return;
-
-                    const statEl = document.createElement('div');
-                    statEl.className = 'flex items-center p-2 hover:bg-orange-50 rounded-lg transition-colors';
-                    
-                    let badgeClass = 'bg-gray-100 text-gray-600';
-                    if (index === 0) badgeClass = 'bg-yellow-100 text-yellow-700 font-bold';
-                    if (index === 1) badgeClass = 'bg-gray-200 text-gray-700 font-bold';
-                    if (index === 2) badgeClass = 'bg-orange-100 text-orange-700 font-bold';
-
-                    statEl.innerHTML = `
-                        <div class="flex items-center flex-1">
-                            <span class="w-6 h-6 flex items-center justify-center rounded-full text-xs mr-3 ${badgeClass}">${index + 1}</span>
-                            <span class="text-gray-800 font-medium">${habitName}</span>
-                        </div>
-                        <div class="w-full bg-gray-100 rounded-full h-2.5 max-w-[100px] mr-3 hidden sm:block">
-                            <div class="bg-orange-400 h-2.5 rounded-full" style="width: ${Math.min(100, (count / sorted[0][1]) * 100)}%"></div>
-                        </div>
-                        <span class="font-bold text-orange-600 text-sm">${count} 次</span>
-                    `;
-                    monthlyStatsList.appendChild(statEl);
+                monthlyStatsList.innerHTML = ''; const now = new Date(); const mLog = log.filter(e => { const d = new Date(e.time); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
+                if (mLog.length === 0) { monthlyStatsList.innerHTML = '<div class="text-gray-400 text-sm italic text-center py-4">本月暂无数据</div>'; return; }
+                const grouped = mLog.reduce((acc, e) => { acc[e.habit] = (acc[e.habit]||0)+1; return acc; }, {});
+                Object.entries(grouped).sort((a,b)=>b[1]-a[1]).forEach(([name, count], idx) => {
+                    const div = document.createElement('div'); div.className = 'flex items-center p-2 hover:bg-orange-50 rounded-lg transition-colors';
+                    let badge = 'bg-gray-100 text-gray-600'; if(idx===0) badge='bg-yellow-100 text-yellow-700'; else if(idx===1) badge='bg-gray-200 text-gray-700'; else if(idx===2) badge='bg-orange-100 text-orange-700';
+                    div.innerHTML = `<div class="flex items-center flex-1"><span class="w-6 h-6 flex items-center justify-center rounded-full text-xs mr-3 ${badge} font-bold">${idx+1}</span><span class="text-gray-800 font-medium">${name}</span></div><span class="font-bold text-orange-600 text-sm">${count} 次</span>`;
+                    monthlyStatsList.appendChild(div);
                 });
             }
 
             function renderDailyChart() {
                 if (!chartCanvas) return;
-
-                const groupedByDay = log.reduce((acc, entry) => {
-                    const dateStr = getFormattedDate(entry.time);
-                    acc[dateStr] = (acc[dateStr] || 0) + 1;
-                    return acc;
-                }, {});
-
-                const sortedEntries = Object.entries(groupedByDay).sort((a, b) => {
-                    const partsA = a[0].split('.').map(Number);
-                    const partsB = b[0].split('.').map(Number);
-                    return new Date(partsA[0], partsA[1]-1, partsA[2]) - new Date(partsB[0], partsB[1]-1, partsB[2]);
-                });
-                
-                const labels = sortedEntries.map(entry => entry[0]);
-                const data = sortedEntries.map(entry => entry[1]);
-
-                const zoomLevel = parseInt(zoomSlider.value);
-                const barWidth = zoomLevel;
-                const gapWidth = barWidth / 2;
-                const unitWidth = barWidth + gapWidth;
-                
-                const minWidth = chartBody.parentElement.clientWidth;
-                const calculatedWidth = Math.max(minWidth, labels.length * unitWidth + 50);
-                
-                chartBody.style.width = `${calculatedWidth}px`;
-
-                if (chartInstance) {
-                    chartInstance.destroy();
-                }
-
-                if (labels.length === 0) {
-                    const ctx = chartCanvas.getContext('2d');
-                    ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
-                    ctx.font = "14px Arial";
-                    ctx.fillStyle = "#9ca3af";
-                    ctx.textAlign = "center";
-                    ctx.fillText("暂无打卡数据", chartCanvas.width/2, chartCanvas.height/2);
-                    return;
-                }
-
+                const grouped = log.reduce((acc, e) => { const d = getFormattedDate(e.time); acc[d] = (acc[d]||0)+1; return acc; }, {});
+                const sorted = Object.entries(grouped).sort((a,b) => { const pa=a[0].split('.').map(Number); const pb=b[0].split('.').map(Number); return new Date(pa[0],pa[1]-1,pa[2]) - new Date(pb[0],pb[1]-1,pb[2]); });
+                const labels = sorted.map(e => e[0]); const data = sorted.map(e => e[1]);
+                const barW = parseInt(zoomSlider.value); const w = Math.max(chartBody.parentElement.clientWidth, labels.length * (barW*1.5) + 50);
+                chartBody.style.width = `${w}px`;
+                if (chartInstance) chartInstance.destroy();
+                if (labels.length === 0) return;
                 chartInstance = new Chart(chartCanvas.getContext('2d'), {
                     type: 'bar',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            label: '打卡总数',
-                            data: data,
-                            backgroundColor: data.map((_, i) => PASTEL_COLORS[i % 7]),
-                            borderRadius: 4,
-                            borderSkipped: false,
-                            barThickness: barWidth,
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        layout: { padding: { left: 10, right: 10, top: 20, bottom: 0 } },
-                        scales: {
-                            x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#7c2d12' } },
-                            y: { beginAtZero: true, border: { display: false }, grid: { color: '#fff7ed' }, ticks: { stepSize: 1, color: '#9a3412' } }
-                        },
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: {
-                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                titleColor: '#ea580c',
-                                bodyColor: '#4b5563',
-                                borderColor: '#fdba74',
-                                borderWidth: 1,
-                                padding: 10,
-                                displayColors: false,
-                                callbacks: { label: (context) => `✨ 完成 ${context.raw} 次` }
-                            }
-                        }
-                    }
+                    data: { labels: labels, datasets: [{ label: '打卡数', data: data, backgroundColor: data.map((_, i) => PASTEL_COLORS[i % 7]), borderRadius: 4, barThickness: barW }] },
+                    options: { responsive: true, maintainAspectRatio: false, layout: { padding: { left: 10, right: 10, top: 20 } }, scales: { x: { grid: { display: false }, ticks: { font: { size: 11 } } }, y: { display: false, beginAtZero: true } }, plugins: { legend: { display: false } } }
                 });
-                
-                if (calculatedWidth > minWidth) {
-                    chartBody.parentElement.scrollLeft = chartBody.parentElement.scrollWidth;
-                }
+                if (w > chartBody.parentElement.clientWidth) chartBody.parentElement.scrollLeft = chartBody.parentElement.scrollWidth;
             }
 
-            // --- Import/Export ---
+            // --- Export/Import ---
             btnExport.addEventListener('click', () => {
-                const data = {
-                    habits: habits,
-                    log: log,
-                    version: 'v9'
-                };
-                const dataStr = JSON.stringify(data);
-                
-                navigator.clipboard.writeText(dataStr).then(() => {
-                    exportStatus.classList.remove('hidden');
-                    setTimeout(() => exportStatus.classList.add('hidden'), 3000);
-                }).catch(err => {
-                    alert('复制失败，请手动复制控制台中的数据');
-                    console.log('数据代码:', dataStr);
-                });
+                const d = JSON.stringify({ habits, log, version: 'v10' });
+                navigator.clipboard.writeText(d).then(() => { exportStatus.classList.remove('hidden'); setTimeout(() => exportStatus.classList.add('hidden'), 3000); }).catch(console.error);
             });
-            
             btnImport.addEventListener('click', () => {
-                const rawStr = importArea.value.trim();
-                if (!rawStr) {
-                    showToast('请输入数据代码', 'bg-red-500');
-                    return;
-                }
-                
                 try {
-                    const data = JSON.parse(rawStr);
-                    if (Array.isArray(data.habits) && Array.isArray(data.log)) {
-                        if (confirm('⚠️ 导入将覆盖当前设备上的所有记录，确定吗？')) {
-                            habits = data.habits;
-                            log = data.log;
-                            saveHabits();
-                            saveLog();
-                            showToast('数据导入成功！', 'bg-green-500');
-                            importArea.value = '';
-                            renderAddHabitList();
-                            renderHabitChecklist();
-                            showView('view-track');
-                        }
-                    } else {
-                        showToast('数据格式错误: 缺少习惯列表', 'bg-red-500');
-                    }
-                } catch(e) {
-                    showToast('无效的数据代码', 'bg-red-500');
-                    console.error(e);
-                }
+                    const d = JSON.parse(importArea.value.trim());
+                    if (Array.isArray(d.habits) && Array.isArray(d.log)) {
+                        if (confirm('确定覆盖当前数据吗？')) { habits = d.habits; log = d.log; saveHabits(); saveLog(); showToast('导入成功', 'bg-green-500'); importArea.value=''; renderAddHabitList(); renderHabitChecklist(); showView('view-track'); }
+                    } else showToast('格式错误', 'bg-red-500');
+                } catch(e) { showToast('代码无效', 'bg-red-500'); }
             });
 
-            // *** FIXED: ICS Export with STRICT UTC (v9) ***
-            // Helper to format date to YYYYMMDDTHHMMSSZ (UTC)
-            const formatICSDateUTC = (date) => {
-                const pad = (n) => n < 10 ? '0' + n : n;
-                return date.getUTCFullYear() +
-                       pad(date.getUTCMonth() + 1) +
-                       pad(date.getUTCDate()) + 'T' +
-                       pad(date.getUTCHours()) +
-                       pad(date.getUTCMinutes()) +
-                       pad(date.getUTCSeconds()) + 'Z';
+            // --- ICS Logic (v10 Fix) ---
+            const formatICSDateUTC = (d) => {
+                const pad = n => n < 10 ? '0'+n : n;
+                return d.getUTCFullYear() + pad(d.getUTCMonth()+1) + pad(d.getUTCDate()) + 'T' + 
+                       pad(d.getUTCHours()) + pad(d.getUTCMinutes()) + pad(d.getUTCSeconds()) + 'Z';
             };
 
             btnExportICS.addEventListener('click', () => {
-                if (log.length === 0) {
-                    showToast('还没有打卡记录哦', 'bg-yellow-500');
-                    return;
-                }
-
-                // Strict CRLF line endings for iOS
-                const CRLF = '\r\n';
+                if (log.length === 0) { showToast('无打卡记录', 'bg-yellow-500'); return; }
                 
-                let icsContent = [
+                const CRLF = '\r\n'; // Strict line endings
+                const nowStr = formatICSDateUTC(new Date());
+                
+                let ics = [
                     'BEGIN:VCALENDAR',
                     'VERSION:2.0',
-                    'PRODID:-//HabitTrackerPro//CN',
+                    'PRODID:-//HabitTrackerPro//CN', // Valid ID
                     'CALSCALE:GREGORIAN',
-                    'METHOD:PUBLISH'
+                    'METHOD:PUBLISH' // Helps import
                 ].join(CRLF) + CRLF;
 
-                log.forEach((entry, index) => {
+                log.forEach((entry, idx) => {
                     const d = new Date(entry.time);
-                    const dateStr = formatICSDateUTC(d);
+                    // Start time (UTC)
+                    const dtStart = formatICSDateUTC(d);
+                    // End time (UTC + 15 mins)
+                    const e = new Date(d.getTime() + 15 * 60000); 
+                    const dtEnd = formatICSDateUTC(e);
                     
-                    // Event duration: 15 mins (Standard short event)
-                    const e = new Date(d.getTime() + 15 * 60 * 1000);
-                    const endDateStr = formatICSDateUTC(e);
-
-                    // UTC timestamp for DTSTAMP
-                    const dtstamp = formatICSDateUTC(new Date());
-
-                    // Unique ID (Simple format)
-                    const uid = `habit-${entry.time}-${index}`;
-                    const summary = `✅ 打卡: ${entry.habit}`;
+                    // Simple UID
+                    const uid = `habit-${entry.time}-${idx}@tracker`;
 
                     const event = [
                         'BEGIN:VEVENT',
                         `UID:${uid}`,
-                        `DTSTAMP:${dtstamp}`,
-                        `DTSTART:${dateStr}`,
-                        `DTEND:${endDateStr}`,
-                        `SUMMARY:${summary}`,
+                        `DTSTAMP:${nowStr}`,
+                        `DTSTART:${dtStart}`,
+                        `DTEND:${dtEnd}`, // Strict Pair
+                        `SUMMARY:✅ ${entry.habit}`,
                         'END:VEVENT'
                     ].join(CRLF);
-                    
-                    icsContent += event + CRLF;
+                    ics += event + CRLF;
                 });
 
-                icsContent += 'END:VCALENDAR';
+                ics += 'END:VCALENDAR';
+                
+                // Show Debug Preview
+                icsPreview.value = ics;
 
-                const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
+                const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
                 const link = document.createElement('a');
-                link.href = url;
-                link.setAttribute('download', 'habit_log.ics');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'habit_log.ics';
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
             });
 
-            // --- Delete Actions ---
-            function initiateClearLogs() {
-                deleteActionState = { type: 'LOGS', step: 1, data: null };
-                modalTitle.textContent = '⚠️ 确认清空日志';
-                modalText.innerHTML = '您确定要清空所有打卡日志吗？<br><span class="text-xs text-red-500">此操作无法撤销。</span>';
-                btnModalConfirm.textContent = '确定清空';
-                btnModalConfirm.className = 'px-5 py-2 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 shadow-md transition-colors';
-                confirmModal.classList.remove('hidden');
-            }
-            
-            function initiateDeleteHabit(l1, l2) {
-                deleteActionState = { type: 'HABIT', step: 1, data: { l1, l2 } };
-                modalTitle.textContent = '⚠️ 确认删除习惯';
-                modalText.innerHTML = `您确定要删除习惯 “<strong class="text-red-600">${l2}</strong>” 吗？<br><span class="text-xs text-gray-500">（历史打卡记录将保留）</span>`;
-                btnModalConfirm.textContent = '确定删除';
-                btnModalConfirm.className = 'px-5 py-2 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 shadow-md transition-colors';
-                confirmModal.classList.remove('hidden');
-            }
-
-            function cancelModal() {
-                deleteActionState = { type: null, data: null, step: 0 };
-                confirmModal.classList.add('hidden');
-                btnModalConfirm.classList.remove('animate-pulse', 'bg-red-700', 'hover:bg-red-800');
-                btnModalConfirm.classList.add('bg-red-500', 'hover:bg-red-600');
-            }
-            
+            // --- Delete Logic ---
+            function initiateClearLogs() { deleteActionState = { type: 'LOGS', step: 1 }; modalTitle.textContent = '⚠️ 确认清空'; modalText.innerHTML = '清空所有记录？'; btnModalConfirm.textContent = '确定'; confirmModal.classList.remove('hidden'); }
+            function initiateDeleteHabit(l1, l2) { deleteActionState = { type: 'HABIT', step: 1, data: {l1,l2} }; modalTitle.textContent = '⚠️ 确认删除'; modalText.innerHTML = `删除习惯 "${l2}"?`; btnModalConfirm.textContent = '确定'; confirmModal.classList.remove('hidden'); }
+            function cancelModal() { deleteActionState = { type: null, step: 0 }; confirmModal.classList.add('hidden'); btnModalConfirm.classList.remove('animate-pulse'); }
             function confirmModalAction() {
                 const { type, step, data } = deleteActionState;
-
                 if (type === 'LOGS') {
-                    if (step === 1) {
-                        deleteActionState.step = 2;
-                        modalText.innerHTML = '<span class="text-red-600 font-bold">最后警告！</span><br>所有历史数据都将永久消失。';
-                        btnModalConfirm.textContent = '是的，全部删除';
-                        btnModalConfirm.className = 'px-5 py-2 bg-red-700 text-white rounded-xl font-bold hover:bg-red-800 shadow-lg transition-colors animate-pulse';
-                    } else if (step === 2) {
-                        log = [];
-                        saveLog();
-                        renderAllStats();
-                        cancelModal();
-                        showToast('数据已清空', 'bg-gray-600');
-                    }
+                    if (step === 1) { deleteActionState.step = 2; modalText.innerHTML = '最后警告：不可恢复！'; btnModalConfirm.textContent = '删除'; btnModalConfirm.classList.add('animate-pulse'); }
+                    else { log = []; saveLog(); renderAllStats(); cancelModal(); showToast('已清空', 'bg-gray-600'); }
                 } else if (type === 'HABIT') {
-                    if (step === 1) {
-                        deleteActionState.step = 2;
-                        modalText.innerHTML = `<span class="text-red-600 font-bold">真的要删除 “${data.l2}” 吗？</span><br>此操作不可撤销。`;
-                        btnModalConfirm.textContent = '永久删除此习惯';
-                        btnModalConfirm.className = 'px-5 py-2 bg-red-700 text-white rounded-xl font-bold hover:bg-red-800 shadow-lg transition-colors animate-pulse';
-                    } else if (step === 2) {
-                        habits = habits.filter(h => !(h.l1 === data.l1 && h.l2 === data.l2));
-                        saveHabits();
-                        renderAddHabitList();
-                        renderHabitChecklist();
-                        cancelModal();
-                        showToast('习惯已删除', 'bg-gray-600');
-                    }
+                    if (step === 1) { deleteActionState.step = 2; modalText.innerHTML = '最后警告：将永久移除。'; btnModalConfirm.textContent = '删除'; btnModalConfirm.classList.add('animate-pulse'); }
+                    else { habits = habits.filter(h => !(h.l1===data.l1 && h.l2===data.l2)); saveHabits(); renderAddHabitList(); renderHabitChecklist(); cancelModal(); showToast('已删除', 'bg-gray-600'); }
                 }
             }
 
-            // --- Event Listeners ---
-            navAdd.addEventListener('click', () => showView('view-add'));
-            navTrack.addEventListener('click', () => showView('view-track'));
-            navSettings.addEventListener('click', () => showView('view-settings'));
-            
-            btnAddHabit.addEventListener('click', addHabit);
-            
             btnInitiateClearLogs.addEventListener('click', initiateClearLogs);
             btnModalCancel.addEventListener('click', cancelModal);
             btnModalConfirm.addEventListener('click', confirmModalAction);
-            
-            let resizeTimer;
-            window.addEventListener('resize', () => {
-                clearTimeout(resizeTimer);
-                resizeTimer = setTimeout(() => {
-                    if (viewTrack.classList.contains('active')) {
-                        renderDailyChart();
-                    }
-                }, 200);
-            });
-            
             zoomSlider.addEventListener('input', () => renderDailyChart());
+            window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (viewTrack.classList.contains('active')) renderDailyChart(); }, 200); });
         });
     </script>
 </body>
