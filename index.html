@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>习惯打卡 Pro v14 (按钮修复版)</title>
+    <title>习惯打卡 Pro v15 (日历算术修复版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Chosen Palette: Warm Neutrals -->
     <!-- Application Structure Plan:
          1. Views: Track, Add, Settings.
-         2. Fix: RESTORED missing event listeners for Navigation buttons and Add Habit button.
-         3. Preserved: All previous fixes (resizeTimer, chartBody, ICS UTC format).
+         2. Fix: Corrected the 'pad' function and date concatenation logic to enforce String concatenation instead of Number addition.
+            (e.g., fixed bug where 2025 + 11 + 25 became 2061 instead of "20251125").
+         3. Preserved: All previous features and listeners.
     -->
     <style>
         .hidden { display: none; }
@@ -132,13 +133,13 @@
         <div id="view-settings" class="view">
             <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-orange-100 space-y-6">
                 
-                <!-- 1. 导出到日历 (V10 增强版) -->
+                <!-- 1. 导出到日历 (V15 修复版) -->
                 <div class="bg-green-50 p-4 rounded-lg border border-green-200">
                     <h3 class="font-bold text-green-800 mb-2 flex items-center">
-                        📅 导出到手机日历 (v10 增强兼容)
+                        📅 导出到手机日历 (v15 格式修复)
                     </h3>
                     <p class="text-xs text-gray-600 mb-3">
-                        模仿原生应用生成的标准日历文件。如果点击“下载”后无法直接导入，请检查下方的预览框是否有内容。
+                        生成标准的日历文件。如果之前提示“无有效日程”，请使用此版本重新下载。
                     </p>
                     <button id="btn-export-ics" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm mb-3">
                         下载日历文件 (.ics)
@@ -208,7 +209,6 @@
             let log = [];
             let chartInstance = null;
             let deleteActionState = { type: null, data: null, step: 0 }; 
-            // Fixed: Variable defined
             let resizeTimer = null; 
 
             // DOM Elements
@@ -412,36 +412,37 @@
                 } catch(e) { showToast('代码无效', 'bg-red-500'); }
             });
 
-            // --- ICS Logic (v10 Fix) ---
+            // --- ICS Logic (V15 FIX: String Concatenation) ---
             const formatICSDateUTC = (d) => {
-                const pad = n => n < 10 ? '0'+n : n;
-                return d.getUTCFullYear() + pad(d.getUTCMonth()+1) + pad(d.getUTCDate()) + 'T' + 
-                       pad(d.getUTCHours()) + pad(d.getUTCMinutes()) + pad(d.getUTCSeconds()) + 'Z';
+                const pad = n => n < 10 ? '0'+n : ''+n; // FORCE STRING RETURN
+                // Ensure all parts are strings before joining
+                return d.getUTCFullYear() + 
+                       pad(d.getUTCMonth() + 1) + 
+                       pad(d.getUTCDate()) + 'T' + 
+                       pad(d.getUTCHours()) + 
+                       pad(d.getUTCMinutes()) + 
+                       pad(d.getUTCSeconds()) + 'Z';
             };
 
             btnExportICS.addEventListener('click', () => {
                 if (log.length === 0) { showToast('无打卡记录', 'bg-yellow-500'); return; }
                 
-                const CRLF = '\r\n'; // Strict line endings
+                const CRLF = '\r\n';
                 const nowStr = formatICSDateUTC(new Date());
                 
                 let ics = [
                     'BEGIN:VCALENDAR',
                     'VERSION:2.0',
-                    'PRODID:-//HabitTrackerPro//CN', // Valid ID
+                    'PRODID:-//HabitTrackerPro//CN',
                     'CALSCALE:GREGORIAN',
-                    'METHOD:PUBLISH' // Helps import
+                    'METHOD:PUBLISH'
                 ].join(CRLF) + CRLF;
 
                 log.forEach((entry, idx) => {
                     const d = new Date(entry.time);
-                    // Start time (UTC)
                     const dtStart = formatICSDateUTC(d);
-                    // End time (UTC + 15 mins)
                     const e = new Date(d.getTime() + 15 * 60000); 
                     const dtEnd = formatICSDateUTC(e);
-                    
-                    // Simple UID
                     const uid = `habit-${entry.time}-${idx}@tracker`;
 
                     const event = [
@@ -449,7 +450,7 @@
                         `UID:${uid}`,
                         `DTSTAMP:${nowStr}`,
                         `DTSTART:${dtStart}`,
-                        `DTEND:${dtEnd}`, // Strict Pair
+                        `DTEND:${dtEnd}`,
                         `SUMMARY:✅ ${entry.habit}`,
                         'END:VEVENT'
                     ].join(CRLF);
@@ -458,7 +459,6 @@
 
                 ics += 'END:VCALENDAR';
                 
-                // Show Debug Preview
                 icsPreview.value = ics;
 
                 const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
@@ -485,18 +485,14 @@
                 }
             }
 
-            // --- Event Listeners (RESTORED ALL) ---
+            // Restored Listeners
             navAdd.addEventListener('click', () => showView('view-add'));
             navTrack.addEventListener('click', () => showView('view-track'));
             navSettings.addEventListener('click', () => showView('view-settings'));
-            
             btnAddHabit.addEventListener('click', addHabit);
-            
             btnInitiateClearLogs.addEventListener('click', initiateClearLogs);
             btnModalCancel.addEventListener('click', cancelModal);
             btnModalConfirm.addEventListener('click', confirmModalAction);
-            
-            // Re-added chart resize logic
             zoomSlider.addEventListener('input', () => renderDailyChart());
             window.addEventListener('resize', () => { 
                 clearTimeout(resizeTimer); 
