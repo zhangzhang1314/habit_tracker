@@ -3,16 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>习惯打卡 Pro v7 (日历同步版 - 修复)</title>
+    <title>习惯打卡 Pro v8 (iOS日历修复版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Chosen Palette: Warm Neutrals with Pastel Accents -->
     <!-- Application Structure Plan:
          1. Views: Track, Add, Settings.
-         2. Feature: Added 'Export to Calendar (.ics)' functionality in Settings.
-         3. Logic: Generates a standard iCalendar file from the log array.
-         4. Preserved: All previous fixes (Import refresh, Delete confirm, etc.).
-         5. Fix: Added missing renderAllStats function definition.
+         2. Fix: ICS generation now uses CRLF (\r\n) line endings required by iOS Calendar.
+         3. Fix: Added METHOD:PUBLISH and proper UTC formatting for DTSTAMP to ensure compatibility.
+         4. Preserved: All previous features (Data sync, Delete confirm, Fireworks).
     -->
     <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
     <style>
@@ -165,13 +164,13 @@
         <div id="view-settings" class="view">
             <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-orange-100 space-y-6">
                 
-                <!-- 1. 导出到日历 (新功能) -->
+                <!-- 1. 导出到日历 (修复版) -->
                 <div class="bg-green-50 p-4 rounded-lg border border-green-200">
                     <h3 class="font-bold text-green-800 mb-2 flex items-center">
-                        📅 导出到手机日历 (iPhone/Android)
+                        📅 导出到手机日历 (修复版)
                     </h3>
                     <p class="text-xs text-gray-600 mb-3">
-                        将所有打卡记录生成日历文件。下载后点击打开，即可批量添加到您的系统日历中。
+                        将打卡记录生成标准日历文件。支持 iPhone 日历完美导入。
                     </p>
                     <button id="btn-export-ics" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm">
                         下载日历文件 (.ics)
@@ -231,7 +230,7 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // --- 常量与状态 ---
+            // --- Init Constants ---
             const HABITS_KEY = 'habitTracker_habits_v2';
             const LOG_KEY = 'habitTracker_log_v2';
             
@@ -281,7 +280,7 @@
             const exportStatus = document.getElementById('export-status');
             const btnImport = document.getElementById('btn-import');
             const importArea = document.getElementById('import-area');
-            const btnExportICS = document.getElementById('btn-export-ics'); // New Button
+            const btnExportICS = document.getElementById('btn-export-ics');
 
             // --- Init ---
             loadData();
@@ -290,7 +289,6 @@
             showView('view-track');
 
             // --- Functions ---
-
             function loadData() {
                 try {
                     habits = JSON.parse(localStorage.getItem(HABITS_KEY)) || [];
@@ -552,6 +550,12 @@
             }
 
             // --- Stats ---
+            function renderAllStats() {
+                renderDailyLog();
+                renderMonthlyStats();
+                renderDailyChart();
+            }
+
             function renderDailyLog() {
                 dailyLogList.innerHTML = '';
                 const todayStr = getFormattedDate(Date.now());
@@ -762,19 +766,12 @@
                 }
             }
 
-            function renderAllStats() {
-                renderDailyLog();
-                renderMonthlyStats();
-                renderDailyChart();
-            }
-
-            // --- Data Migration & ICS Export (v7) ---
-            
+            // --- Import/Export ---
             btnExport.addEventListener('click', () => {
                 const data = {
                     habits: habits,
                     log: log,
-                    version: 'v7'
+                    version: 'v8'
                 };
                 const dataStr = JSON.stringify(data);
                 
@@ -817,48 +814,63 @@
                 }
             });
 
-            // *** New: Export to ICS ***
+            // *** FIXED: ICS Export with proper CRLF and strict formatting ***
+            const formatICSDate = (date) => {
+                const pad = (n) => n < 10 ? '0' + n : n;
+                return date.getFullYear() +
+                       pad(date.getMonth() + 1) +
+                       pad(date.getDate()) + 'T' +
+                       pad(date.getHours()) +
+                       pad(date.getMinutes()) +
+                       pad(date.getSeconds());
+            };
+
             btnExportICS.addEventListener('click', () => {
                 if (log.length === 0) {
                     showToast('还没有打卡记录哦', 'bg-yellow-500');
                     return;
                 }
 
-                let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//HabitTrackerPro//CN\nCALSCALE:GREGORIAN\n";
+                // *** CORE FIX: Strict CRLF line endings for iOS ***
+                const CRLF = '\r\n';
                 
-                log.forEach(entry => {
-                    const d = new Date(entry.time);
-                    
-                    // Format date to YYYYMMDDTHHMMSS
-                    const pad = (n) => n < 10 ? '0' + n : n;
-                    const dateStr = d.getFullYear() +
-                                    pad(d.getMonth() + 1) +
-                                    pad(d.getDate()) + 'T' +
-                                    pad(d.getHours()) +
-                                    pad(d.getMinutes()) +
-                                    pad(d.getSeconds());
-                    
-                    // Simple event duration of 5 mins for the check-in
-                    const endTime = d.getTime() + 5 * 60 * 1000; 
-                    const e = new Date(endTime);
-                    const endDateStr = e.getFullYear() +
-                                    pad(e.getMonth() + 1) +
-                                    pad(e.getDate()) + 'T' +
-                                    pad(e.getHours()) +
-                                    pad(e.getMinutes()) +
-                                    pad(e.getSeconds());
+                let icsContent = [
+                    'BEGIN:VCALENDAR',
+                    'VERSION:2.0',
+                    'PRODID:-//HabitTrackerPro//CN',
+                    'CALSCALE:GREGORIAN',
+                    'METHOD:PUBLISH' // Helps iOS recognition
+                ].join(CRLF) + CRLF;
 
-                    icsContent += "BEGIN:VEVENT\n";
-                    // Unique ID based on timestamp
-                    icsContent += `UID:${entry.time}-${entry.habit}@habit-tracker\n`;
-                    icsContent += `DTSTAMP:${dateStr}\n`;
-                    icsContent += `DTSTART:${dateStr}\n`;
-                    icsContent += `DTEND:${endDateStr}\n`;
-                    icsContent += `SUMMARY:✅ 打卡: ${entry.habit}\n`;
-                    icsContent += "END:VEVENT\n";
+                log.forEach((entry, index) => {
+                    const d = new Date(entry.time);
+                    const dateStr = formatICSDate(d);
+                    
+                    // End time (5 mins)
+                    const e = new Date(d.getTime() + 5 * 60 * 1000);
+                    const endDateStr = formatICSDate(e);
+
+                    // UTC timestamp for DTSTAMP (required)
+                    const dtstamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+                    // Unique ID
+                    const uid = `${entry.time}-${index}@habit-tracker.local`;
+                    const summary = `✅ 打卡: ${entry.habit}`;
+
+                    const event = [
+                        'BEGIN:VEVENT',
+                        `UID:${uid}`,
+                        `DTSTAMP:${dtstamp}`,
+                        `DTSTART:${dateStr}`,
+                        `DTEND:${endDateStr}`,
+                        `SUMMARY:${summary}`,
+                        'END:VEVENT'
+                    ].join(CRLF);
+                    
+                    icsContent += event + CRLF;
                 });
 
-                icsContent += "END:VCALENDAR";
+                icsContent += 'END:VCALENDAR';
 
                 const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
                 const url = URL.createObjectURL(blob);
