@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>习惯打卡 Pro v11 (修复运行错误)</title>
+    <title>习惯打卡 Pro v14 (按钮修复版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Chosen Palette: Warm Neutrals -->
     <!-- Application Structure Plan:
          1. Views: Track, Add, Settings.
-         2. Fix: Re-added missing 'chartBody' variable definition causing ReferenceError.
-         3. Preserved: ICS Export logic with strict UTC format.
+         2. Fix: RESTORED missing event listeners for Navigation buttons and Add Habit button.
+         3. Preserved: All previous fixes (resizeTimer, chartBody, ICS UTC format).
     -->
     <style>
         .hidden { display: none; }
@@ -208,6 +208,8 @@
             let log = [];
             let chartInstance = null;
             let deleteActionState = { type: null, data: null, step: 0 }; 
+            // Fixed: Variable defined
+            let resizeTimer = null; 
 
             // DOM Elements
             const navAdd = document.getElementById('nav-add');
@@ -224,7 +226,7 @@
             const dailyLogList = document.getElementById('daily-log-list');
             const monthlyStatsList = document.getElementById('monthly-stats-list');
             const chartCanvas = document.getElementById('daily-bar-chart');
-            const chartBody = document.getElementById('chart-body'); // Fixed: Added chartBody definition
+            const chartBody = document.getElementById('chart-body'); 
             const zoomSlider = document.getElementById('zoom-slider');
             const toastMessage = document.getElementById('toast-message');
             const fireworksOverlay = document.getElementById('fireworks-overlay');
@@ -483,11 +485,25 @@
                 }
             }
 
+            // --- Event Listeners (RESTORED ALL) ---
+            navAdd.addEventListener('click', () => showView('view-add'));
+            navTrack.addEventListener('click', () => showView('view-track'));
+            navSettings.addEventListener('click', () => showView('view-settings'));
+            
+            btnAddHabit.addEventListener('click', addHabit);
+            
             btnInitiateClearLogs.addEventListener('click', initiateClearLogs);
             btnModalCancel.addEventListener('click', cancelModal);
             btnModalConfirm.addEventListener('click', confirmModalAction);
+            
+            // Re-added chart resize logic
             zoomSlider.addEventListener('input', () => renderDailyChart());
-            window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (viewTrack.classList.contains('active')) renderDailyChart(); }, 200); });
+            window.addEventListener('resize', () => { 
+                clearTimeout(resizeTimer); 
+                resizeTimer = setTimeout(() => { 
+                    if (viewTrack.classList.contains('active')) renderDailyChart(); 
+                }, 200); 
+            });
         });
     </script>
 </body>
